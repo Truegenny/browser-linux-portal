@@ -43,6 +43,48 @@
 		reverse_proxy portal:3000
 	}
 
+	# ----- LOGOUT: poison browser basic-auth cache, then redirect home ------
+	# HTTP basic auth has no protocol-level logout. The reliable cross-
+	# browser trick is to issue a fetch() with bogus credentials so the
+	# browser overwrites its cached creds for the /app realm, then send
+	# the user back to /. The page below is served without basic_auth
+	# (it's outside the auth-gated routes) so a sign-out works even if
+	# the user has already been kicked.
+	handle /logout {
+		header Content-Type "text/html; charset=utf-8"
+		respond 200 `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signing out…</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header class="site">
+  <a class="brand" href="/"><span class="glyph">_$</span> Browser Linux</a>
+</header>
+<section class="container" style="text-align:center;padding:80px 24px;">
+  <h2>Signing you out…</h2>
+  <p class="muted">Clearing cached credentials. Redirecting home.</p>
+  <p class="muted small">Tip: closing this browser tab also fully clears HTTP basic-auth credentials.</p>
+</section>
+<script>
+  // Send bogus Basic creds at /app so the browser overwrites whatever
+  // it had cached for that realm. Then go home.
+  fetch('/app', {
+    method: 'HEAD',
+    headers: { 'Authorization': 'Basic ' + btoa('logout:logout') },
+    cache: 'no-store',
+    credentials: 'include'
+  }).catch(function () {}).finally(function () {
+    setTimeout(function () { window.location.href = '/'; }, 500);
+  });
+</script>
+</body>
+</html>`
+	}
+
 	# ----- ADMIN: extra-gated, admin-only basicauth -------------------------
 	handle /admin* {
 		import admin_auth

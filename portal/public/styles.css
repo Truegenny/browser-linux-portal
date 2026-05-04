@@ -66,6 +66,22 @@ header.site .who .role {
   padding: 1px 8px; border-radius: 999px; font-size: 11px;
   text-transform: uppercase; letter-spacing: .5px;
 }
+header.site .who .signout {
+  margin-left: 14px;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--mut);
+  font-size: 12px;
+  text-decoration: none;
+  transition: color .12s, border-color .12s, background .12s;
+}
+header.site .who .signout:hover {
+  color: var(--fg);
+  border-color: var(--mut);
+  background: #161a1f;
+  text-decoration: none;
+}
 
 .hero {
   padding: 64px 24px 48px; text-align: center; border-bottom: 1px solid var(--line);
