@@ -52,21 +52,23 @@
 	}
 
 	# ----- USER WORKSPACE TERMINAL: /u/{user}/* -> ws-{user}:7681 -----------
-	# Two checks: authenticated AND user matches the URL slot (no peeking
-	# at other users' workspaces). `handle_path /u/*` strips the `/u`
-	# prefix, so inside this block the path begins with `/<user>/...`.
+	# Two checks: authenticated AND URL path slot matches the auth user
+	# (no peeking at other users' workspaces). We embed the auth user
+	# directly into the regex pattern — Caddy substitutes the placeholder
+	# at request time, so the regex only matches when the URL's user
+	# slug equals the authenticated user.
+	#
+	# `handle_path /u/*` strips the `/u` prefix, so inside this block the
+	# path begins with `/<user>/...`.
 	handle_path /u/* {
 		import user_auth
 
-		@own_workspace {
-			path_regexp uterm ^/([^/]+)(/.*)?$
-			expression {http.regexp.uterm.1} == {http.auth.user.id}
-		}
+		@own_workspace path_regexp uterm ^/{http.auth.user.id}(/.*)?$
 		handle @own_workspace {
-			rewrite * {http.regexp.uterm.2}
-			reverse_proxy ws-{http.regexp.uterm.1}:7681
+			rewrite * {http.regexp.uterm.1}
+			reverse_proxy ws-{http.auth.user.id}:7681
 		}
-		respond "403 Forbidden — you can only access your own workspace." 403
+		respond "403 Forbidden — your workspace is at /u/{http.auth.user.id}/." 403
 	}
 
 	# ----- AUTHENTICATED APP: dashboard -------------------------------------
