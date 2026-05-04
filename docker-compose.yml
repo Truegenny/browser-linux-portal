@@ -24,9 +24,10 @@ services:
       DOMAIN: ${DOMAIN:-localhost}
       ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./caddy/users.users:/etc/caddy/users.users:ro
-      - ./caddy/admins.users:/etc/caddy/admins.users:ro
+      # Bind-mount the whole caddy/ directory (not individual files) — this
+      # avoids Docker auto-creating empty directories when a single-file
+      # bind-mount source is missing for any reason.
+      - ./caddy:/etc/caddy:ro
       - caddy-data:/data
       - caddy-config:/config
       - caddy-logs:/var/log/caddy
