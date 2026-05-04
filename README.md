@@ -196,7 +196,17 @@ docker compose exec caddy tail -f /var/log/caddy/access.log
   keys the user pastes. Volumes are not encrypted at rest by Docker. Use
   Azure Disk Encryption on the data disk.
 
-## Portainer deployment
+## Deploying
+
+**Recommended:** direct on a clean Ubuntu VM — see [`docs/DEPLOY.md`](docs/DEPLOY.md).
+The runbook covers Docker install, repo clone with private auth, env config,
+NSG, systemd unit, idle reaper, backups, and troubleshooting.
+
+The Portainer Stack-from-Git path below works but has more moving parts and
+is finicky around bind-mount state when deploys fail mid-way. Use it only if
+Portainer is part of your existing workflow.
+
+## Portainer deployment (alternative, more fragile)
 
 This repo is set up to be deployed as a **Portainer Stack from Git**. The
 workspace image is built as part of the stack (the `workspace-image` service
