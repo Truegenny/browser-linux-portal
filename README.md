@@ -35,7 +35,7 @@ xterm.js + ttyd.
             │  ws-<user>               │  Container per Entra/basicauth user
             │  Debian 12 + Node 20 +   │
             │  Claude Code + ttyd      │
-            │  /home/dev → ws-<user>-home volume
+            │  /home/node → ws-<user>-home volume
             └──────────────────────────┘
 ```
 
@@ -75,7 +75,7 @@ After step 4 above:
 4. Run `claude /login` to authenticate Claude Code.
 5. Run `claude` — chat with Claude.
 
-Close the tab. Stop the workspace from `/app` if you want. Your `/home/dev`
+Close the tab. Stop the workspace from `/app` if you want. Your `/home/node`
 contents persist in the `ws-admin-home` Docker volume.
 
 ## Directory layout
@@ -192,7 +192,7 @@ docker compose exec caddy tail -f /var/log/caddy/access.log
   do not publish the portal's port directly to the internet.
 - **Docker socket access** is granted to the portal. The portal effectively
   has root on the host. Treat it accordingly.
-- **Per-user volumes** persist everything in `/home/dev`, including any API
+- **Per-user volumes** persist everything in `/home/node`, including any API
   keys the user pastes. Volumes are not encrypted at rest by Docker. Use
   Azure Disk Encryption on the data disk.
 

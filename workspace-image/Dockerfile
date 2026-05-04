@@ -2,25 +2,23 @@
 #
 # Workspace image: Debian 12 slim + Node 20 + Claude Code + ttyd.
 #
-# We use the official `node:20-bookworm-slim` (Debian 12 slim with Node 20
-# preinstalled and maintained by the Node + Docker teams) to avoid the
-# NodeSource setup script that was failing on the Portainer host.
-#
-# Each RUN below starts with `set -eux` so every command is echoed; if a
-# step fails, the exact failing command appears in the build log.
+# We use `node:20-bookworm-slim`. That image already ships a non-root
+# `node` user (uid 1000, /home/node, bash shell) created during the
+# upstream build, so we reuse it instead of running `useradd` ourselves.
+# `useradd` isn't in the slim image's final filesystem, which was the
+# cause of the previous exit-127 build failure.
 
 FROM node:20-bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
-    PATH="/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin"
+    PATH="/home/node/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
-# 1) Sanity: which OS, arch, shell are we actually on?
+# 1) Sanity print: which OS, arch, shell are we actually on?
 RUN set -eux; \
     cat /etc/os-release; \
     uname -a; \
-    which sh bash; \
-    sh --version 2>/dev/null || true; \
+    id node; \
     node --version; \
     npm --version
 
@@ -54,23 +52,22 @@ RUN set -eux; \
     npm install -g @anthropic-ai/claude-code; \
     claude --version || true
 
-# 5) Non-root dev user with passwordless sudo.
+# 5) Passwordless sudo for the existing `node` user.
 RUN set -eux; \
-    useradd -m -s /bin/bash -u 1000 dev; \
-    printf 'dev ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/dev; \
-    chmod 0440 /etc/sudoers.d/dev
+    printf 'node ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/node; \
+    chmod 0440 /etc/sudoers.d/node
 
 COPY motd /etc/motd
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-USER dev
-WORKDIR /home/dev
+USER node
+WORKDIR /home/node
 
 # Bash login shell shows MOTD and a one-time claude-login hint.
 RUN set -eux; \
-    echo 'cat /etc/motd' >> /home/dev/.bashrc; \
-    echo '[ -f /home/dev/.first-run ] || { echo; echo "Tip: run \"claude /login\" to authenticate Claude Code."; echo; touch /home/dev/.first-run; }' >> /home/dev/.bashrc
+    echo 'cat /etc/motd' >> /home/node/.bashrc; \
+    echo '[ -f /home/node/.first-run ] || { echo; echo "Tip: run \"claude /login\" to authenticate Claude Code."; echo; touch /home/node/.first-run; }' >> /home/node/.bashrc
 
 EXPOSE 7681
 

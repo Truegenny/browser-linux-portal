@@ -118,7 +118,7 @@ export async function ensureWorkspace(user: string): Promise<WorkspaceInfo> {
     HostConfig: {
       RestartPolicy: { Name: 'no' },
       NetworkMode: config.workspaceNetwork,
-      Binds: [`${vName}:/home/dev`],
+      Binds: [`${vName}:/home/node`],
       Memory: memBytes,
       MemorySwap: memBytes,
       NanoCpus: nanoCpus,

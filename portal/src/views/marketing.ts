@@ -79,7 +79,7 @@ export function renderMarketing(opts: { user?: string; isAdmin?: boolean }): str
   <h2>FAQ</h2>
   <details><summary>Is this production-ready?</summary><p>v0–v1 is targeted at small trusted teams behind basicauth. v1.5 adds Entra ID SSO. v2+ adds RBAC and audit log.</p></details>
   <details><summary>How do users authenticate?</summary><p>Today: HTTP basic auth (one bcrypt hash per user, stored in a file Caddy reads). v1.5: OIDC against Microsoft Entra ID.</p></details>
-  <details><summary>Where do my files live?</summary><p>In a Docker named volume on the host (<code>ws-&lt;user&gt;-home</code>) mounted at <code>/home/dev</code> inside the container. Back it up with <code>tar</code>.</p></details>
+  <details><summary>Where do my files live?</summary><p>In a Docker named volume on the host (<code>ws-&lt;user&gt;-home</code>) mounted at <code>/home/node</code> inside the container. Back it up with <code>tar</code>.</p></details>
   <details><summary>Can users break out of the container?</summary><p>The same risk model as any sudo-enabled container: assume yes if they're motivated. Don't host this in front of untrusted users. For trusted teammates, the kernel sandbox is acceptable.</p></details>
   <details><summary>Does it run offline?</summary><p>The site is on your VM, so you need to reach the VM. The Anthropic API is online-only — <code>claude</code> needs internet.</p></details>
 </section>
