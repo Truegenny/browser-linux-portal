@@ -36,7 +36,7 @@ export function renderAdmin(args: {
           <form method="post" action="/admin/workspace/${esc(w.user)}/stop"  style="display:inline"><button>Stop</button></form>
           <form method="post" action="/admin/workspace/${esc(w.user)}/start" style="display:inline"><button>Start</button></form>
           <form method="post" action="/admin/workspace/${esc(w.user)}/destroy" style="display:inline"
-                onsubmit="return confirm('Destroy ${esc(w.user)}\\'s container? Volume preserved unless you check the box below.')">
+                onsubmit="return confirm('Destroy the container for ${esc(w.user)}? The home volume is preserved unless you check the wipe box.');">
             <label style="font-size:11px;color:#8a929e;display:inline-flex;align-items:center;gap:3px;margin-right:4px">
               <input type="checkbox" name="wipe_volume"> wipe data
             </label>
@@ -88,18 +88,21 @@ export function renderAdminUsers(args: {
       ? '<span class="role">admin</span>'
       : '<span class="muted small">—</span>';
 
+    const demoteAttr = isSelf
+      ? 'disabled title="You cannot demote yourself."'
+      : '';
     const promoteOrDemote = u.isAdmin
       ? `<form method="post" action="/admin/users/${esc(u.username)}/demote" style="display:inline">
-           <button ${isSelf ? 'disabled title="You can\\'t demote yourself."' : ''}>Demote</button>
+           <button ${demoteAttr}>Demote</button>
          </form>`
       : `<form method="post" action="/admin/users/${esc(u.username)}/promote" style="display:inline">
            <button>Promote to admin</button>
          </form>`;
 
     const deleteForm = isSelf
-      ? '<button disabled title="You can\'t delete yourself.">Delete</button>'
+      ? '<button disabled title="You cannot delete yourself.">Delete</button>'
       : `<form method="post" action="/admin/users/${esc(u.username)}/delete" style="display:inline"
-              onsubmit="return confirm('Delete user ${esc(u.username)}? This cannot be undone.${' Workspace data preserved unless you check the box.'}');">
+              onsubmit="return confirm('Delete user ${esc(u.username)}? Workspace data is preserved unless you check the wipe box.');">
            <label style="font-size:11px;color:#8a929e;display:inline-flex;align-items:center;gap:3px;margin-right:4px">
              <input type="checkbox" name="wipe_workspace"> wipe workspace
            </label>
