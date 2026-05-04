@@ -49,7 +49,7 @@
 
 		@own_workspace {
 			path_regexp uterm ^/([^/]+)(/.*)?$
-			expression `{http.regexp.uterm.1}` == `{http.auth.user.id}`
+			expression {http.regexp.uterm.1} == {http.auth.user.id}
 		}
 		handle @own_workspace {
 			rewrite * {http.regexp.uterm.2}
