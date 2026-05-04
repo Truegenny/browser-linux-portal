@@ -9,6 +9,7 @@
     "dev": "tsx watch src/server.ts"
   },
   "dependencies": {
+    "@fastify/formbody": "^7.4.0",
     "@fastify/static": "^7.0.4",
     "dockerode": "^4.0.2",
     "fastify": "^4.28.1"

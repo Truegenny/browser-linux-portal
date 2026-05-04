@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
+import fastifyFormbody from '@fastify/formbody';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs/promises';
@@ -25,6 +26,10 @@ const app = Fastify({
   trustProxy: true, // Caddy is in front
   bodyLimit: 1024 * 1024,
 });
+
+// Parse application/x-www-form-urlencoded so plain HTML <form method="post">
+// submissions (Create / Stop / Restart buttons) don't 415.
+await app.register(fastifyFormbody);
 
 await app.register(fastifyStatic, {
   root: path.resolve(__dirname, '..', 'public'),
