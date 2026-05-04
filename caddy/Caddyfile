@@ -51,24 +51,25 @@
 		}
 	}
 
-	# ----- USER WORKSPACE TERMINAL: /u/{user}/* -> ws-{user}:7681 -----------
-	# Two checks: authenticated AND URL path slot matches the auth user
-	# (no peeking at other users' workspaces). We embed the auth user
-	# directly into the regex pattern — Caddy substitutes the placeholder
-	# at request time, so the regex only matches when the URL's user
-	# slug equals the authenticated user.
+	# ----- USER WORKSPACE TERMINAL: /u/<anything>/* -> ws-<auth_user>:7681 --
+	# Routing is purely by the authenticated user. The user slot in the URL
+	# is ignored — Caddy strips it and proxies to the workspace owned by
+	# whoever is authenticated. This means there is no way to even attempt
+	# to reach another user's workspace; alice typing /u/bob/ silently
+	# lands in alice's own container.
 	#
-	# `handle_path /u/*` strips the `/u` prefix, so inside this block the
-	# path begins with `/<user>/...`.
+	# `handle_path /u/*` strips the `/u` prefix; the regex below strips
+	# the next path segment (the user slot) so what reaches ttyd starts
+	# with `/`.
 	handle_path /u/* {
 		import user_auth
 
-		@own_workspace path_regexp uterm ^/{http.auth.user.id}(/.*)?$
-		handle @own_workspace {
-			rewrite * {http.regexp.uterm.1}
+		@user_path path_regexp upath ^/[^/]+(/.*)?$
+		handle @user_path {
+			rewrite * {http.regexp.upath.1}
 			reverse_proxy ws-{http.auth.user.id}:7681
 		}
-		respond "403 Forbidden — your workspace is at /u/{http.auth.user.id}/." 403
+		respond 404
 	}
 
 	# ----- AUTHENTICATED APP: dashboard -------------------------------------
