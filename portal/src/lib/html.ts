@@ -1,6 +1,10 @@
 // Tiny HTML rendering helpers. No templating engine on purpose —
 // template literals + an `esc()` for user data is enough at this scale.
 
+import { VERSION } from './version.js';
+
+export type Tab = 'home' | 'app' | 'admin';
+
 export function esc(s: unknown): string {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -10,14 +14,29 @@ export function esc(s: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
-export function layout(title: string, body: string, opts: { user?: string; isAdmin?: boolean } = {}): string {
-  const nav = opts.user
-    ? `<nav>
-         <a href="/app">Dashboard</a>
-         ${opts.isAdmin ? '<a href="/admin">Admin</a>' : ''}
-         <span class="who">${esc(opts.user)}</span>
-       </nav>`
-    : `<nav><a href="/app">Sign in</a></nav>`;
+export function layout(
+  title: string,
+  body: string,
+  opts: { user?: string; isAdmin?: boolean; active?: Tab } = {},
+): string {
+  const tab = (label: string, href: string, key: Tab) => {
+    const cls = opts.active === key ? 'tab tab-active' : 'tab';
+    return `<a class="${cls}" href="${href}">${label}</a>`;
+  };
+
+  // Home is always visible. Admin appears only for admins. Sign-in
+  // shows up when no one is signed in.
+  const tabs: string[] = [tab('Home', '/', 'home')];
+  if (opts.user) {
+    tabs.push(tab('Dashboard', '/app', 'app'));
+    if (opts.isAdmin) tabs.push(tab('Admin', '/admin', 'admin'));
+  } else {
+    tabs.push(`<a class="tab" href="/app">Sign in</a>`);
+  }
+
+  const who = opts.user
+    ? `<span class="who">${esc(opts.user)}${opts.isAdmin ? ' <span class="role">admin</span>' : ''}</span>`
+    : '';
 
   return `<!doctype html>
 <html lang="en">
@@ -29,10 +48,18 @@ export function layout(title: string, body: string, opts: { user?: string; isAdm
 </head>
 <body>
 <header class="site">
-  <div class="brand"><span class="glyph">_$</span> Browser Linux</div>
-  ${nav}
+  <a class="brand" href="/"><span class="glyph">_$</span> Browser Linux</a>
+  <nav class="tabs">${tabs.join('')}</nav>
+  ${who}
 </header>
 ${body}
+<footer class="site">
+  <div>
+    Browser Linux — self-hosted dev workspaces.
+    Built on Caddy + Docker + ttyd + Claude Code.
+  </div>
+  <div class="version">v${esc(VERSION)}</div>
+</footer>
 </body>
 </html>`;
 }

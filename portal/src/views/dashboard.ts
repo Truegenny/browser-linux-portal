@@ -58,5 +58,5 @@ export function renderDashboard(args: {
   ${tip}
 </section>`;
 
-  return layout(`Dashboard — ${user}`, body, { user, isAdmin });
+  return layout(`Dashboard — ${user}`, body, { user, isAdmin, active: 'app' });
 }

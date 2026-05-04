@@ -84,9 +84,6 @@ export function renderMarketing(opts: { user?: string; isAdmin?: boolean }): str
   <details><summary>Does it run offline?</summary><p>The site is on your VM, so you need to reach the VM. The Anthropic API is online-only — <code>claude</code> needs internet.</p></details>
 </section>
 
-<footer class="site">
-  <div>Browser Linux — self-hosted dev workspaces. Built on Caddy + Docker + ttyd + Claude Code.</div>
-</footer>
 `;
-  return layout('Browser Linux', body, opts);
+  return layout('Browser Linux', body, { ...opts, active: 'home' });
 }

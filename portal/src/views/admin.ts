@@ -43,7 +43,7 @@ export function renderAdmin(args: {
   </table>
   <p class="muted small">Logs: <a href="/admin/logs">access log</a></p>
 </section>`;
-  return layout('Admin', body, { user, isAdmin: true });
+  return layout('Admin', body, { user, isAdmin: true, active: 'admin' });
 }
 
 export function renderLogs(args: { user: string; lines: string[] }): string {
@@ -53,5 +53,5 @@ export function renderLogs(args: { user: string; lines: string[] }): string {
   <pre>${esc(args.lines.join('\n'))}</pre>
   <p><a href="/admin">← Back to admin</a></p>
 </section>`;
-  return layout('Admin logs', body, { user: args.user, isAdmin: true });
+  return layout('Admin logs', body, { user: args.user, isAdmin: true, active: 'admin' });
 }
