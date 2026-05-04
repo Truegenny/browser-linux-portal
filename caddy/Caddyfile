@@ -24,8 +24,19 @@
 
 # ===========================================================================
 # Main site
+# ---------------------------------------------------------------------------
+# SITE_ADDRESS controls how Caddy serves this stack:
+#
+#   :80            (default)  — bind HTTP on port 80, ANY Host header.
+#                               Use for IP-based access without DNS or TLS.
+#                               Caddy will NOT auto-enable HTTPS.
+#
+#   box.you.com    (prod)     — bind both 80 and 443 for that hostname,
+#                               auto-fetch a Let's Encrypt cert, redirect
+#                               HTTP→HTTPS. DNS A record must point at this
+#                               VM and ports 80/443 must be open.
 # ===========================================================================
-{$DOMAIN:localhost} {
+{$SITE_ADDRESS::80} {
 	# ----- PUBLIC: marketing landing page + static assets -------------------
 	@public path / /static/* /favicon.ico /favicon.svg /robots.txt
 	handle @public {
