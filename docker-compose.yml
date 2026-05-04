@@ -36,6 +36,8 @@ services:
       - portal
 
   portal:
+    image: browser-linux-portal-portal:latest
+    pull_policy: build
     build:
       context: ./portal
     container_name: portal
@@ -71,6 +73,7 @@ services:
   #   docker compose build workspace-image
   workspace-image:
     image: ${WORKSPACE_IMAGE:-browser-linux-workspace:latest}
+    pull_policy: build
     build:
       context: ./workspace-image
     container_name: workspace-image-builder
