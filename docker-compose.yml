@@ -59,6 +59,9 @@ services:
       # Portal needs Docker socket access to create/start/stop user containers.
       - /var/run/docker.sock:/var/run/docker.sock
       - caddy-logs:/var/log/caddy:ro
+      # Portal reads/writes users.users + admins.users so admins can manage
+      # users from the UI. Same files Caddy reads from /etc/caddy/.
+      - ./caddy:/caddy:rw
     networks:
       - portal-net
     # No published port — Caddy reaches it on the internal network.
