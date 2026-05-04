@@ -1,0 +1,12 @@
+
+  ┌──────────────────────────────────────────────────┐
+  │  Browser-Linux Workspace                         │
+  │                                                  │
+  │  • Debian 12 + Node 20 + Claude Code             │
+  │  • Your home directory persists across restarts  │
+  │  • Run:  claude /login   to authenticate         │
+  │  • Run:  claude          to start a chat         │
+  │                                                  │
+  │  sudo is passwordless. Mess things up freely.    │
+  └──────────────────────────────────────────────────┘
+

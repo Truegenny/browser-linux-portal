@@ -1,0 +1,89 @@
+{
+	# Global options
+	# In dev (DOMAIN=localhost) Caddy uses its internal CA / self-signed.
+	# In prod, Caddy requests a real cert from Let's Encrypt automatically.
+	email {$ACME_EMAIL:admin@example.com}
+	# auto_https off  # uncomment to disable HTTPS while iterating
+}
+
+# ---------------------------------------------------------------------------
+# Reusable auth snippets — populated by scripts/add-user.sh
+# Each line:  username  bcrypt_hash
+# ---------------------------------------------------------------------------
+(user_auth) {
+	basic_auth {
+		import /etc/caddy/users.users
+	}
+}
+
+(admin_auth) {
+	basic_auth {
+		import /etc/caddy/admins.users
+	}
+}
+
+# ===========================================================================
+# Main site
+# ===========================================================================
+{$DOMAIN:localhost} {
+	# ----- PUBLIC: marketing landing page + static assets -------------------
+	@public path / /static/* /favicon.ico /favicon.svg /robots.txt
+	handle @public {
+		reverse_proxy portal:3000
+	}
+
+	# ----- ADMIN: extra-gated, admin-only basicauth -------------------------
+	handle /admin* {
+		import admin_auth
+		reverse_proxy portal:3000 {
+			header_up X-Auth-User {http.auth.user.id}
+		}
+	}
+
+	# ----- USER WORKSPACE TERMINAL: /u/{user}/* -> ws-{user}:7681 -----------
+	# Two checks: authenticated AND user matches the URL slot (no peeking
+	# at other users' workspaces). `handle_path /u/*` strips the `/u`
+	# prefix, so inside this block the path begins with `/<user>/...`.
+	handle_path /u/* {
+		import user_auth
+
+		@own_workspace {
+			path_regexp uterm ^/([^/]+)(/.*)?$
+			expression `{http.regexp.uterm.1}` == `{http.auth.user.id}`
+		}
+		handle @own_workspace {
+			rewrite * {http.regexp.uterm.2}
+			reverse_proxy ws-{http.regexp.uterm.1}:7681
+		}
+		respond "403 Forbidden — you can only access your own workspace." 403
+	}
+
+	# ----- AUTHENTICATED APP: dashboard -------------------------------------
+	handle /app* {
+		import user_auth
+		reverse_proxy portal:3000 {
+			header_up X-Auth-User {http.auth.user.id}
+		}
+	}
+
+	handle /api/* {
+		import user_auth
+		reverse_proxy portal:3000 {
+			header_up X-Auth-User {http.auth.user.id}
+		}
+	}
+
+	# ----- DEFAULT: send anything else to the portal (which 404s) -----------
+	handle {
+		reverse_proxy portal:3000
+	}
+
+	# ----- LOGGING ----------------------------------------------------------
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 10mb
+			roll_keep 10
+		}
+		format json
+	}
+}

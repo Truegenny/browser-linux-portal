@@ -1,0 +1,78 @@
+name: browser-linux-portal
+
+# All workspace containers join this external network so Caddy can resolve
+# them by name (ws-<user>). The portal creates them via the Docker socket.
+networks:
+  portal-net:
+    name: portal-net
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:
+  caddy-logs:
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "${CADDY_HTTP_PORT:-8080}:80"
+      - "${CADDY_HTTPS_PORT:-8443}:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/users.users:/etc/caddy/users.users:ro
+      - ./caddy/admins.users:/etc/caddy/admins.users:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - caddy-logs:/var/log/caddy
+    networks:
+      - portal-net
+    depends_on:
+      - portal
+
+  portal:
+    build:
+      context: ./portal
+    container_name: portal
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      WORKSPACE_IMAGE: ${WORKSPACE_IMAGE:-browser-linux-workspace:latest}
+      WORKSPACE_NETWORK: portal-net
+      WORKSPACE_MEMORY: ${WORKSPACE_MEMORY:-2g}
+      WORKSPACE_CPUS: ${WORKSPACE_CPUS:-1.5}
+      WORKSPACE_IDLE_HOURS: ${WORKSPACE_IDLE_HOURS:-2}
+      ADMIN_USERS: ${ADMIN_USERS:-admin}
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      # Portal needs Docker socket access to create/start/stop user containers.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - caddy-logs:/var/log/caddy:ro
+    networks:
+      - portal-net
+    # No published port — Caddy reaches it on the internal network.
+
+  # ---------------------------------------------------------------------
+  # Workspace image builder
+  # ---------------------------------------------------------------------
+  # This service exists only so the workspace image is built alongside the
+  # rest of the stack. On Portainer Stack deploy with "rebuild image and
+  # redeploy", the per-user image (browser-linux-workspace:latest) is built
+  # automatically. The container itself just prints and exits — it stays
+  # in "Exited (0)" state in the stack, which is expected.
+  #
+  # Manual rebuild after Dockerfile changes:
+  #   docker compose build workspace-image
+  workspace-image:
+    image: ${WORKSPACE_IMAGE:-browser-linux-workspace:latest}
+    build:
+      context: ./workspace-image
+    container_name: workspace-image-builder
+    restart: "no"
+    command: ["sh", "-c", "echo 'browser-linux-workspace image is ready.'; exit 0"]
