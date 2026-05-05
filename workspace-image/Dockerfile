@@ -55,22 +55,31 @@ RUN set -eux; \
     rm /tmp/filebrowser.tar.gz; \
     /usr/local/bin/filebrowser version
 
-# 3b) Pre-build a filebrowser DB with auth disabled and external links
-# (GitHub / "report issue") hidden. We do this at IMAGE BUILD time so any
-# failure (incompatible flags, missing user, etc.) breaks the build with a
-# clear error instead of silently falling back to login-required at runtime.
+# 3b) Pre-build a filebrowser DB with auth disabled. Each step is its own
+# RUN so a failing flag fails ONE small step and the build log shows
+# exactly which command rejected what.
+ENV FB_DB=/usr/local/share/filebrowser/filebrowser.db
+
 RUN set -eux; \
     mkdir -p /usr/local/share/filebrowser; \
-    DB=/usr/local/share/filebrowser/filebrowser.db; \
-    filebrowser config init --database "$DB"; \
-    filebrowser config set \
-        --auth.method=noauth \
-        --branding.name="Browser Linux Files" \
-        --branding.disableExternal=true \
-        --branding.disableUsedPercentage=true \
-        --database "$DB"; \
-    filebrowser users add nobody nobody --perm.admin --database "$DB"; \
-    chmod 644 "$DB"
+    filebrowser config init --database "$FB_DB"
+
+RUN set -eux; \
+    filebrowser config set --auth.method=noauth --database "$FB_DB"
+
+# Branding flags are best-effort — tolerate the failure so a renamed flag
+# in a future filebrowser release doesn't break the whole build.
+RUN set -eux; \
+    filebrowser config set --branding.name="Browser Linux Files" --database "$FB_DB" || \
+      echo "WARN: --branding.name not accepted by this filebrowser version"; \
+    filebrowser config set --branding.disableExternal=true --database "$FB_DB" || \
+      echo "WARN: --branding.disableExternal not accepted by this filebrowser version"
+
+# noauth still wants a "current user" record so request actions have an owner.
+RUN set -eux; \
+    filebrowser users add nobody nobody --perm.admin --database "$FB_DB"
+
+RUN chmod 644 "$FB_DB"
 
 # 4) Claude Code.
 RUN set -eux; \
