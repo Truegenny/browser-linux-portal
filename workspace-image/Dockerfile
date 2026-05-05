@@ -55,14 +55,20 @@ RUN set -eux; \
     rm /tmp/filebrowser.tar.gz; \
     /usr/local/bin/filebrowser version
 
-# 3b) Pre-build a filebrowser DB with auth disabled. We do this at IMAGE
-# BUILD time so any failure (incompatible flags, missing user, etc.) breaks
-# the build instead of silently falling back to login-required at runtime.
+# 3b) Pre-build a filebrowser DB with auth disabled and external links
+# (GitHub / "report issue") hidden. We do this at IMAGE BUILD time so any
+# failure (incompatible flags, missing user, etc.) breaks the build with a
+# clear error instead of silently falling back to login-required at runtime.
 RUN set -eux; \
     mkdir -p /usr/local/share/filebrowser; \
     DB=/usr/local/share/filebrowser/filebrowser.db; \
     filebrowser config init --database "$DB"; \
-    filebrowser config set --auth.method=noauth --database "$DB"; \
+    filebrowser config set \
+        --auth.method=noauth \
+        --branding.name="Browser Linux Files" \
+        --branding.disableExternal=true \
+        --branding.disableUsedPercentage=true \
+        --database "$DB"; \
     filebrowser users add nobody nobody --perm.admin --database "$DB"; \
     chmod 644 "$DB"
 
