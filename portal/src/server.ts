@@ -75,8 +75,17 @@ app.get('/app', async (req, reply) => {
   const u = await requireUser(req, reply);
   if (!u) return;
   const ws = await getWorkspace(u.username);
+  const listeningPorts =
+    ws.status === 'running'
+      ? await listListeningPorts(u.username).catch(() => [])
+      : [];
   reply.type('text/html').send(
-    renderDashboard({ user: u.username, isAdmin: u.isAdmin, workspace: ws }),
+    renderDashboard({
+      user: u.username,
+      isAdmin: u.isAdmin,
+      workspace: ws,
+      listeningPorts,
+    }),
   );
 });
 

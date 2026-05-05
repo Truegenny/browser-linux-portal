@@ -1,12 +1,13 @@
 import { layout, esc } from '../lib/html.js';
-import type { WorkspaceInfo } from '../lib/dockerctl.js';
+import type { WorkspaceInfo, ListeningPort } from '../lib/dockerctl.js';
 
 export function renderDashboard(args: {
   user: string;
   isAdmin: boolean;
   workspace: WorkspaceInfo;
+  listeningPorts: ListeningPort[];
 }): string {
-  const { user, isAdmin, workspace } = args;
+  const { user, isAdmin, workspace, listeningPorts } = args;
   const status = workspace.status;
 
   const statusBadge = `<span class="badge st-${status}">${status}</span>`;
@@ -42,8 +43,9 @@ export function renderDashboard(args: {
     authenticate Claude Code in your browser. After that <code>claude</code> works
     from any session.</p>`;
 
-  // Paste-ready instructions for Claude Code running inside the workspace.
-  // Plain text (no markdown rendering) so it copies cleanly into a chat.
+  // ---------------------------------------------------------------------
+  // Paste-ready briefing (collapsed by default)
+  // ---------------------------------------------------------------------
   const claudeBriefing = `# Hosting a webapp from this workspace
 
 This container sits behind a Caddy reverse proxy on the host VM. READ THIS
@@ -108,59 +110,108 @@ cross-user access is impossible.
           <pre id="claude-briefing" class="claude-briefing">${esc(claudeBriefing)}</pre>
         </div>
       </details>
-    </div>
+    </div>`;
 
-    <script>
-      (function () {
-        document.querySelectorAll('button.copy-btn').forEach(function (btn) {
-          btn.addEventListener('click', function () {
-            var id = btn.getAttribute('data-copy-target');
-            var el = document.getElementById(id);
-            if (!el) return;
-            var text = el.textContent || '';
-            var done = function () {
-              var orig = btn.textContent;
-              btn.textContent = 'Copied!';
-              btn.classList.add('copy-ok');
-              setTimeout(function () {
-                btn.textContent = orig;
-                btn.classList.remove('copy-ok');
-              }, 1400);
-            };
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-              navigator.clipboard.writeText(text).then(done).catch(function () {});
-            } else {
-              // Fallback for older browsers / non-secure contexts
-              var ta = document.createElement('textarea');
-              ta.value = text;
-              ta.style.position = 'fixed';
-              ta.style.opacity = '0';
-              document.body.appendChild(ta);
-              ta.select();
-              try { document.execCommand('copy'); done(); } catch (e) {}
-              document.body.removeChild(ta);
-            }
-          });
-        });
-      })();
-    </script>`;
+  // ---------------------------------------------------------------------
+  // Right-hand sidebar: listening ports in this user's container
+  // ---------------------------------------------------------------------
+  const portRows = listeningPorts
+    .map((p) => {
+      const isTtyd = p.port === 7681;
+      const url = `/u/${esc(user)}/p/${p.port}/`;
+      let label: string;
+      let body: string;
+      if (isTtyd) {
+        label = '<span class="port-tag tag-terminal">terminal</span>';
+        body = `<code>${p.port}</code>`;
+      } else if (p.reachable) {
+        label = '<span class="port-tag tag-webapp">webapp</span>';
+        body = `<a href="${url}" target="_blank" rel="noopener"><code>${p.port}</code></a>`;
+      } else {
+        label = '<span class="port-tag tag-loopback">loopback</span>';
+        body = `<code title="Bound to ${esc(p.address)}; rebind 0.0.0.0 to expose">${p.port}</code>`;
+      }
+      return `<li class="port-row">${body}${label}</li>`;
+    })
+    .join('');
+
+  const portsBody =
+    status !== 'running'
+      ? '<p class="muted small">Workspace is not running. Start it to see active ports.</p>'
+      : listeningPorts.length === 0
+      ? '<p class="muted small">Nothing listening yet. Start a server in your workspace, then refresh this page.</p>'
+      : `<ul class="ports-list">${portRows}</ul>`;
+
+  const portsSidebar = `
+    <aside class="dashboard-side">
+      <div class="card ports-card">
+        <div class="ports-head">
+          <h3 style="margin:0;">Listening ports</h3>
+          <a class="btn-ghost" href="/app" title="Refresh">↻</a>
+        </div>
+        <p class="muted small" style="margin:6px 0 12px;">In <code>${esc(workspace.containerName)}</code></p>
+        ${portsBody}
+        <p class="muted small" style="margin-top:14px;">
+          Ports are scoped to your container — they don't conflict with other users' workspaces, only with your own running services. Loopback ports (<code>127.0.0.1</code>) aren't reachable through the proxy; bind <code>0.0.0.0</code> instead.
+        </p>
+      </div>
+    </aside>`;
 
   const body = `
 <section class="container">
   <h2>Hello, ${esc(user)}.</h2>
   <p class="lead">Your personal Linux workspace.</p>
-  <div class="card">
-    <div class="card-row">
-      <div>
-        <h3>Workspace</h3>
-        ${meta}
+  <div class="dashboard-grid">
+    <div class="dashboard-main">
+      <div class="card">
+        <div class="card-row">
+          <div>
+            <h3>Workspace</h3>
+            ${meta}
+          </div>
+          <div class="actions">${actions}</div>
+        </div>
       </div>
-      <div class="actions">${actions}</div>
+      ${tip}
+      ${webappCard}
     </div>
+    ${portsSidebar}
   </div>
-  ${tip}
-  ${webappCard}
-</section>`;
+</section>
+
+<script>
+  (function () {
+    document.querySelectorAll('button.copy-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = btn.getAttribute('data-copy-target');
+        var el = document.getElementById(id);
+        if (!el) return;
+        var text = el.textContent || '';
+        var done = function () {
+          var orig = btn.textContent;
+          btn.textContent = 'Copied!';
+          btn.classList.add('copy-ok');
+          setTimeout(function () {
+            btn.textContent = orig;
+            btn.classList.remove('copy-ok');
+          }, 1400);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done).catch(function () {});
+        } else {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand('copy'); done(); } catch (e) {}
+          document.body.removeChild(ta);
+        }
+      });
+    });
+  })();
+</script>`;
 
   return layout(`Dashboard — ${user}`, body, { user, isAdmin, active: 'app' });
 }
