@@ -1,7 +1,7 @@
 import { layout, esc, bytesHuman } from '../lib/html.js';
 import type { WorkspaceInfo } from '../lib/dockerctl.js';
 
-type AdminSubTab = 'workspaces' | 'users' | 'logs';
+type AdminSubTab = 'workspaces' | 'users' | 'ports' | 'logs';
 
 function adminSubnav(active: AdminSubTab): string {
   const tab = (label: string, href: string, key: AdminSubTab) =>
@@ -9,6 +9,7 @@ function adminSubnav(active: AdminSubTab): string {
   return `<nav class="subtabs">
     ${tab('Workspaces', '/admin', 'workspaces')}
     ${tab('Users', '/admin/users', 'users')}
+    ${tab('Ports', '/admin/ports', 'ports')}
     ${tab('Logs', '/admin/logs', 'logs')}
   </nav>`;
 }
@@ -160,6 +161,70 @@ export function renderAdminUsers(args: {
   </form>
 </section>`;
   return layout('Admin — Users', body, { user, isAdmin: true, active: 'admin' });
+}
+
+// ---------------------------------------------------------------------------
+// Ports — listening sockets across all running workspaces
+// ---------------------------------------------------------------------------
+export function renderAdminPorts(args: {
+  user: string;
+  ports: { user: string; port: number; address: string; reachable: boolean }[];
+  runningCount: number;
+  stoppedCount: number;
+}): string {
+  const { user, ports, runningCount, stoppedCount } = args;
+
+  const rows = ports.map((p) => {
+    const isTtyd = p.port === 7681;
+    const role = isTtyd
+      ? '<span class="muted small">terminal (ttyd)</span>'
+      : p.reachable
+      ? '<span class="badge st-running">webapp</span>'
+      : '<span class="muted small">loopback only</span>';
+    const url = `/u/${esc(p.user)}/p/${p.port}/`;
+    const link =
+      p.reachable && !isTtyd
+        ? `<a href="${url}" target="_blank" rel="noopener"><code>${esc(url)}</code></a>`
+        : isTtyd
+        ? `<code>—</code>`
+        : `<span class="muted small" title="App is bound to ${esc(p.address)}; bind 0.0.0.0 to be reachable">unreachable — bind 0.0.0.0</span>`;
+    return `<tr>
+      <td><code>${esc(p.user)}</code></td>
+      <td>${p.port}</td>
+      <td><code>${esc(p.address)}</code></td>
+      <td>${role}</td>
+      <td>${link}</td>
+    </tr>`;
+  }).join('');
+
+  const empty = ports.length === 0
+    ? `<tr><td colspan="5" class="muted">No listening sockets in any running workspace.</td></tr>`
+    : '';
+
+  const summary = `<p class="muted small">
+    ${runningCount} workspace${runningCount === 1 ? '' : 's'} running,
+    ${stoppedCount} stopped.
+    Loopback-only ports (127.0.0.1) are listed but cannot be reached through the proxy —
+    bind <code>0.0.0.0</code> instead.
+  </p>`;
+
+  const body = `
+<section class="container">
+  <div class="admin-head">
+    <div>
+      <h2>Admin</h2>
+      <p class="lead">Listening TCP ports across all workspaces.</p>
+    </div>
+    <a class="btn-ghost" href="/admin/ports">Refresh</a>
+  </div>
+  ${adminSubnav('ports')}
+  ${summary}
+  <table class="admin">
+    <thead><tr><th>User</th><th>Port</th><th>Bound to</th><th>Role</th><th>URL</th></tr></thead>
+    <tbody>${rows}${empty}</tbody>
+  </table>
+</section>`;
+  return layout('Admin — Ports', body, { user, isAdmin: true, active: 'admin' });
 }
 
 // ---------------------------------------------------------------------------

@@ -196,6 +196,92 @@ export async function listWorkspaces(): Promise<WorkspaceInfo[]> {
   });
 }
 
+export interface ListeningPort {
+  user: string;
+  port: number;
+  address: string;       // 0.0.0.0, *, ::, 127.0.0.1, ::1
+  reachable: boolean;    // true if Caddy can proxy (i.e., bound on a wildcard)
+}
+
+// Exec `ss -tln` inside the user's workspace and parse the listening sockets.
+// Loopback-only sockets (127.0.0.1 / ::1) appear too but are flagged as
+// unreachable from the proxy — that surfaces a common bug ("works in
+// localhost but not from the browser").
+export async function listListeningPorts(user: string): Promise<ListeningPort[]> {
+  const { container: cName } = names(user);
+  const ins = await inspectContainerSafe(cName);
+  if (!ins || !ins.State.Running) return [];
+
+  let raw: Buffer;
+  try {
+    raw = await execAndCapture(cName, ['ss', '-tln']);
+  } catch {
+    return [];
+  }
+  const text = demuxDockerStream(raw);
+  return parseSsListenLines(text, user);
+}
+
+async function execAndCapture(
+  containerName: string,
+  cmd: string[],
+): Promise<Buffer> {
+  const exec = await docker.getContainer(containerName).exec({
+    Cmd: cmd,
+    AttachStdout: true,
+    AttachStderr: true,
+  });
+  const stream = await exec.start({});
+  const chunks: Buffer[] = [];
+  await new Promise<void>((resolve, reject) => {
+    stream.on('data', (c: Buffer) => chunks.push(Buffer.from(c)));
+    stream.on('end', resolve);
+    stream.on('error', reject);
+  });
+  return Buffer.concat(chunks);
+}
+
+// Docker exec with no Tty multiplexes stdout/stderr into 8-byte-header chunks.
+// Each chunk: [stream_id (1B), 0, 0, 0, length (4B BE), payload (length B)].
+function demuxDockerStream(buf: Buffer): string {
+  let out = '';
+  let i = 0;
+  while (i + 8 <= buf.length) {
+    const len = buf.readUInt32BE(i + 4);
+    const end = Math.min(i + 8 + len, buf.length);
+    out += buf.subarray(i + 8, end).toString('utf8');
+    i = end;
+  }
+  return out;
+}
+
+function parseSsListenLines(text: string, user: string): ListeningPort[] {
+  const result: ListeningPort[] = [];
+  for (const line of text.split('\n')) {
+    // Match: LISTEN <recv-q> <send-q> <local-addr:port> <peer-addr:port> ...
+    const m = line.trim().match(/^LISTEN\s+\d+\s+\d+\s+(\S+)\s+\S+/);
+    if (!m) continue;
+    const local = m[1];
+    if (!local) continue;
+    // local can be "0.0.0.0:47291", "[::]:7681", "127.0.0.1:8000", "*:1234"
+    const sp = local.lastIndexOf(':');
+    if (sp < 0) continue;
+    const address = local.slice(0, sp).replace(/^\[|\]$/g, '');
+    const port = Number(local.slice(sp + 1));
+    if (!Number.isFinite(port) || port <= 0) continue;
+    const wildcard = address === '0.0.0.0' || address === '*' || address === '::';
+    result.push({ user, port, address, reachable: wildcard });
+  }
+  // De-dupe (ss prints both v4 and v6 entries for dual-stack listeners).
+  const seen = new Set<string>();
+  return result.filter((p) => {
+    const k = `${p.port}:${p.reachable ? 'r' : 'l'}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).sort((a, b) => a.port - b.port);
+}
+
 export async function workspaceStats(
   user: string,
 ): Promise<{ cpuPct: number; memBytes: number; memLimit: number } | null> {

@@ -14,6 +14,7 @@ import {
   destroyWorkspace,
   listWorkspaces,
   workspaceStats,
+  listListeningPorts,
 } from './lib/dockerctl.js';
 import {
   listUsers,
@@ -28,6 +29,7 @@ import {
   renderAdmin,
   renderLogs,
   renderAdminUsers,
+  renderAdminPorts,
 } from './views/admin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -147,6 +149,29 @@ app.post('/admin/workspace/:user/destroy', async (req, reply) => {
   const keepVolume = body.wipe_volume !== 'on';
   await destroyWorkspace(target, { keepVolume });
   reply.redirect('/admin');
+});
+
+app.get('/admin/ports', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const workspaces = await listWorkspaces();
+  const running = workspaces.filter((w) => w.status === 'running');
+  // Pull ports from each running workspace in parallel; tolerate failures.
+  const portRows = (
+    await Promise.all(
+      running.map((w) =>
+        listListeningPorts(w.user).catch(() => []),
+      ),
+    )
+  ).flat();
+  reply.type('text/html').send(
+    renderAdminPorts({
+      user: u.username,
+      ports: portRows,
+      runningCount: running.length,
+      stoppedCount: workspaces.length - running.length,
+    }),
+  );
 });
 
 app.get('/admin/logs', async (req, reply) => {
