@@ -42,6 +42,22 @@ export function renderDashboard(args: {
     authenticate Claude Code in your browser. After that <code>claude</code> works
     from any session.</p>`;
 
+  const webappCard = `
+    <div class="card" style="margin-top:18px;">
+      <h3>Hosting a webapp from your workspace</h3>
+      <p class="muted small" style="margin:6px 0 12px;">Bind your dev server / API / app to <code>0.0.0.0:&lt;port&gt;</code> inside the workspace, then open:</p>
+      <pre style="margin:0;"><code>/u/${esc(user)}/p/&lt;port&gt;/</code></pre>
+      <p class="muted small" style="margin:12px 0 0;">
+        Example: a Python server on port 8000 in the workspace becomes
+        <code>/u/${esc(user)}/p/8000/</code> in the browser. WebSockets work.
+        Use relative links in your HTML, or add
+        <code>&lt;base href="/u/${esc(user)}/p/&lt;port&gt;/"&gt;</code> if your app uses absolute paths.
+      </p>
+      <p class="muted small" style="margin:8px 0 0;">
+        Auth-gated by your sign-in, so only you can reach your own ports.
+      </p>
+    </div>`;
+
   const body = `
 <section class="container">
   <h2>Hello, ${esc(user)}.</h2>
@@ -56,6 +72,7 @@ export function renderDashboard(args: {
     </div>
   </div>
   ${tip}
+  ${webappCard}
 </section>`;
 
   return layout(`Dashboard — ${user}`, body, { user, isAdmin, active: 'app' });

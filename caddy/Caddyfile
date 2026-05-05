@@ -93,19 +93,37 @@
 		}
 	}
 
-	# ----- USER WORKSPACE TERMINAL: /u/<anything>/* -> ws-<auth_user>:7681 --
+	# ----- USER WORKSPACE: /u/<anything>/[p/<port>/]* -> ws-<auth_user> -----
 	# Routing is purely by the authenticated user. The user slot in the URL
 	# is ignored — Caddy strips it and proxies to the workspace owned by
-	# whoever is authenticated. This means there is no way to even attempt
-	# to reach another user's workspace; alice typing /u/bob/ silently
-	# lands in alice's own container.
+	# whoever is authenticated. There is no way to even attempt to reach
+	# another user's workspace; alice typing /u/bob/ silently lands in
+	# alice's own container.
 	#
-	# `handle_path /u/*` strips the `/u` prefix; the regex below strips
-	# the next path segment (the user slot) so what reaches ttyd starts
-	# with `/`.
+	# Two upstreams within the workspace:
+	#
+	#   /u/<slug>/p/<port>/<rest>   →  ws-<auth_user>:<port>/<rest>
+	#       Use this to expose any HTTP/WS service you bind on
+	#       0.0.0.0:<port> inside your workspace (test webapps, dev
+	#       servers, jupyter, anything). Caddy will WebSocket-upgrade
+	#       automatically. Use relative URLs in your app or set a
+	#       <base href="/u/<slug>/p/<port>/"> for absolute paths.
+	#
+	#   /u/<slug>/<rest>            →  ws-<auth_user>:7681/<rest>
+	#       Default — the in-browser bash terminal (ttyd).
+	#
+	# `handle_path /u/*` strips the `/u` prefix.
 	handle_path /u/* {
 		import user_auth
 
+		# Webapp port-proxy must be matched FIRST (more specific).
+		@port_proxy path_regexp pport ^/[^/]+/p/(\d+)(/.*)?$
+		handle @port_proxy {
+			rewrite * {http.regexp.pport.2}
+			reverse_proxy ws-{http.auth.user.id}:{http.regexp.pport.1}
+		}
+
+		# Everything else → the terminal.
 		@user_path path_regexp upath ^/[^/]+(/.*)?$
 		handle @user_path {
 			rewrite * {http.regexp.upath.1}
