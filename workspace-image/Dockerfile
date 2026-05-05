@@ -73,7 +73,9 @@ RUN set -eux; \
     filebrowser config set --branding.name="Browser Linux Files" --database "$FB_DB" || \
       echo "WARN: --branding.name not accepted by this filebrowser version"; \
     filebrowser config set --branding.disableExternal=true --database "$FB_DB" || \
-      echo "WARN: --branding.disableExternal not accepted by this filebrowser version"
+      echo "WARN: --branding.disableExternal not accepted by this filebrowser version"; \
+    filebrowser config set --branding.theme=dark --database "$FB_DB" || \
+      echo "WARN: --branding.theme not accepted by this filebrowser version"
 
 # noauth still wants a "current user" record so request actions have an
 # owner. The password is never used (auth is disabled at the proxy and via
