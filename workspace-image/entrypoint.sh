@@ -10,7 +10,10 @@ set -euo pipefail
 
 # ---------------------------------------------------------------------------
 # Filebrowser — drag-and-drop file manager, gated by Caddy basicauth (no
-# filebrowser auth of its own).
+# filebrowser auth of its own). The DB is pre-built at image build time
+# at /usr/local/share/filebrowser/filebrowser.db with auth.method=noauth
+# and a default user; we just copy it to /tmp on each container start so
+# every container gets a clean known-good state.
 # ---------------------------------------------------------------------------
 FB_DB="${FB_DATABASE:-/tmp/filebrowser.db}"
 FB_ROOT="${FB_ROOT:-/home/node}"
@@ -18,17 +21,9 @@ FB_PORT="${FB_PORT:-7682}"
 FB_ADDRESS="${FB_ADDRESS:-0.0.0.0}"
 # Default baseurl is set per-container by the portal:
 #   FB_BASEURL=/u/<user>/files
-# Fallback below is just for sanity if the env var is missing.
 FB_BASEURL="${FB_BASEURL:-/files}"
 
-# Initialize the filebrowser DB on every container start (we keep it in
-# /tmp so it's recreated cleanly each time — there is no useful per-user
-# state because auth is disabled).
-rm -f "$FB_DB"
-filebrowser config init --database "$FB_DB" >/dev/null
-filebrowser config set --auth.method=noauth --database "$FB_DB" >/dev/null
-# noauth still wants a "current user" record to attribute actions to.
-filebrowser users add nobody nobody --perm.admin --database "$FB_DB" >/dev/null 2>&1 || true
+cp -f /usr/local/share/filebrowser/filebrowser.db "$FB_DB"
 
 filebrowser \
   --database "$FB_DB" \
