@@ -75,9 +75,11 @@ RUN set -eux; \
     filebrowser config set --branding.disableExternal=true --database "$FB_DB" || \
       echo "WARN: --branding.disableExternal not accepted by this filebrowser version"
 
-# noauth still wants a "current user" record so request actions have an owner.
+# noauth still wants a "current user" record so request actions have an
+# owner. The password is never used (auth is disabled at the proxy and via
+# auth.method=noauth) but filebrowser's validator requires ≥12 chars.
 RUN set -eux; \
-    filebrowser users add nobody nobody --perm.admin --database "$FB_DB"
+    filebrowser users add nobody noauth-unused-placeholder-xxx --perm.admin --database "$FB_DB"
 
 RUN chmod 644 "$FB_DB"
 
