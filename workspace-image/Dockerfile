@@ -33,19 +33,27 @@ RUN set -eux; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
-# 3) ttyd — arch-aware download from upstream releases.
+# 3) ttyd + filebrowser — arch-aware downloads from upstream releases.
 ARG TARGETARCH
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
-      amd64) TTYD_ARCH=x86_64 ;; \
-      arm64) TTYD_ARCH=aarch64 ;; \
-      arm)   TTYD_ARCH=arm ;; \
+      amd64) TTYD_ARCH=x86_64; FB_ARCH=amd64 ;; \
+      arm64) TTYD_ARCH=aarch64; FB_ARCH=arm64 ;; \
+      arm)   TTYD_ARCH=arm;     FB_ARCH=armv7 ;; \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
+    \
     curl -fSL --retry 3 --retry-delay 2 -o /usr/local/bin/ttyd \
       "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${TTYD_ARCH}"; \
     chmod +x /usr/local/bin/ttyd; \
-    /usr/local/bin/ttyd --version
+    /usr/local/bin/ttyd --version; \
+    \
+    curl -fSL --retry 3 --retry-delay 2 -o /tmp/filebrowser.tar.gz \
+      "https://github.com/filebrowser/filebrowser/releases/latest/download/linux-${FB_ARCH}-filebrowser.tar.gz"; \
+    tar -xzf /tmp/filebrowser.tar.gz -C /usr/local/bin filebrowser; \
+    chmod +x /usr/local/bin/filebrowser; \
+    rm /tmp/filebrowser.tar.gz; \
+    /usr/local/bin/filebrowser version
 
 # 4) Claude Code.
 RUN set -eux; \

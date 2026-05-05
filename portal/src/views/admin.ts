@@ -176,18 +176,26 @@ export function renderAdminPorts(args: {
 
   const rows = ports.map((p) => {
     const isTtyd = p.port === 7681;
+    const isFiles = p.port === 7682;
+    const filesUrl = `/u/${esc(p.user)}/files/`;
+    const portUrl = `/u/${esc(p.user)}/p/${p.port}/`;
     const role = isTtyd
       ? '<span class="muted small">terminal (ttyd)</span>'
+      : isFiles
+      ? '<span class="badge st-running">files</span>'
       : p.reachable
       ? '<span class="badge st-running">webapp</span>'
       : '<span class="muted small">loopback only</span>';
-    const url = `/u/${esc(p.user)}/p/${p.port}/`;
-    const link =
-      p.reachable && !isTtyd
-        ? `<a href="${url}" target="_blank" rel="noopener"><code>${esc(url)}</code></a>`
-        : isTtyd
-        ? `<code>—</code>`
-        : `<span class="muted small" title="App is bound to ${esc(p.address)}; bind 0.0.0.0 to be reachable">unreachable — bind 0.0.0.0</span>`;
+    let link: string;
+    if (isTtyd) {
+      link = '<code>—</code>';
+    } else if (isFiles) {
+      link = `<a href="${filesUrl}" target="_blank" rel="noopener"><code>${esc(filesUrl)}</code></a>`;
+    } else if (p.reachable) {
+      link = `<a href="${portUrl}" target="_blank" rel="noopener"><code>${esc(portUrl)}</code></a>`;
+    } else {
+      link = `<span class="muted small" title="App is bound to ${esc(p.address)}; bind 0.0.0.0 to be reachable">unreachable — bind 0.0.0.0</span>`;
+    }
     return `<tr>
       <td><code>${esc(p.user)}</code></td>
       <td>${p.port}</td>

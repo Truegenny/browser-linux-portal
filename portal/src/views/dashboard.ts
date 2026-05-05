@@ -22,6 +22,7 @@ export function renderDashboard(args: {
            <button class="cta">Start workspace</button>
          </form>`
       : `<a class="cta" href="/u/${esc(user)}/" target="_blank" rel="noopener">Open terminal →</a>
+         <a class="cta secondary" href="/u/${esc(user)}/files/" target="_blank" rel="noopener">Open files →</a>
          <form method="post" action="/api/workspace/stop" style="display:inline">
            <button class="cta secondary">Stop</button>
          </form>
@@ -118,15 +119,20 @@ cross-user access is impossible.
   const portRows = listeningPorts
     .map((p) => {
       const isTtyd = p.port === 7681;
-      const url = `/u/${esc(user)}/p/${p.port}/`;
+      const isFiles = p.port === 7682;
+      const webappUrl = `/u/${esc(user)}/p/${p.port}/`;
+      const filesUrl = `/u/${esc(user)}/files/`;
       let label: string;
       let body: string;
       if (isTtyd) {
         label = '<span class="port-tag tag-terminal">terminal</span>';
         body = `<code>${p.port}</code>`;
+      } else if (isFiles) {
+        label = '<span class="port-tag tag-files">files</span>';
+        body = `<a href="${filesUrl}" target="_blank" rel="noopener"><code>${p.port}</code></a>`;
       } else if (p.reachable) {
         label = '<span class="port-tag tag-webapp">webapp</span>';
-        body = `<a href="${url}" target="_blank" rel="noopener"><code>${p.port}</code></a>`;
+        body = `<a href="${webappUrl}" target="_blank" rel="noopener"><code>${p.port}</code></a>`;
       } else {
         label = '<span class="port-tag tag-loopback">loopback</span>';
         body = `<code title="Bound to ${esc(p.address)}; rebind 0.0.0.0 to expose">${p.port}</code>`;

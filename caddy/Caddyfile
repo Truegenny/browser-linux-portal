@@ -116,7 +116,16 @@
 	handle_path /u/* {
 		import user_auth
 
-		# Webapp port-proxy must be matched FIRST (more specific).
+		# File browser (filebrowser) — most specific, matched FIRST.
+		# We DON'T strip the prefix; instead we rewrite it onto the
+		# auth user's slug so filebrowser sees its own baseurl.
+		@files path_regexp ufiles ^/[^/]+/files(/.*)?$
+		handle @files {
+			rewrite * /u/{http.auth.user.id}/files{http.regexp.ufiles.1}
+			reverse_proxy ws-{http.auth.user.id}:7682
+		}
+
+		# Webapp port-proxy.
 		@port_proxy path_regexp pport ^/[^/]+/p/(\d+)(/.*)?$
 		handle @port_proxy {
 			rewrite * {http.regexp.pport.2}

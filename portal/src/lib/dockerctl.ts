@@ -110,6 +110,13 @@ export async function ensureWorkspace(user: string): Promise<WorkspaceInfo> {
     name: cName,
     Image: config.workspaceImage,
     Hostname: cName,
+    Env: [
+      `WS_USER=${user}`,
+      // filebrowser inside the container expects this prefix in the URL it
+      // receives (we set it as its --baseurl); Caddy rewrites incoming
+      // requests onto this exact path before proxying.
+      `FB_BASEURL=/u/${user}/files`,
+    ],
     Labels: {
       [LABEL_USER]: user,
       [LABEL_CREATED]: nowIso,
@@ -132,7 +139,7 @@ export async function ensureWorkspace(user: string): Promise<WorkspaceInfo> {
         [config.workspaceNetwork]: { Aliases: [cName] },
       },
     },
-    ExposedPorts: { '7681/tcp': {} },
+    ExposedPorts: { '7681/tcp': {}, '7682/tcp': {} },
   });
 
   await docker.getContainer(cName).start();
