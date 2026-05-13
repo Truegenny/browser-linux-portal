@@ -94,7 +94,10 @@ export async function addOrUpdateUser(
 ): Promise<void> {
   if (!isValidUsername(username)) throw new Error('Invalid username');
   if (password.length < 8) throw new Error('Password must be at least 8 characters');
-  const hash = await bcrypt.hash(password, 12);
+  // Cost 14 matches what scripts/add-user.sh produces via the Caddy CLI
+  // and is the current industry recommendation. ~1s per hash on a B-series
+  // VM — fine for a rare admin action.
+  const hash = await bcrypt.hash(password, 14);
 
   const [users, admins] = await Promise.all([
     readFile(USERS_FILE),

@@ -6,7 +6,7 @@ container with `claude` (Claude Code CLI), `ttyd` (browser terminal), and
 basic auth (Entra OIDC planned for v1.5). Marketed as a small alternative to
 Coder / Codespaces / WebVM.
 
-Repo: https://github.com/Truegenny/browser-linux-portal (private)
+Repo: https://github.com/Truegenny/browser-linux-portal (private — verify before pushing anything sensitive)
 
 If you're a fresh Claude session: **read the README first, then this file.**
 The README covers user-facing setup; this file covers architecture decisions,
@@ -76,7 +76,9 @@ Docker socket as users sign in.
 ## Top-level layout
 
 ```
-caddy/                 — Caddyfile + users.users + admins.users (bcrypt)
+caddy/                 — Caddyfile + *.users.example templates
+                         (real users.users + admins.users are GITIGNORED;
+                          ./scripts/add-user.sh creates them on each VM)
 portal/                — Fastify + TS app
   src/
     server.ts          — routes
@@ -180,6 +182,8 @@ done
 
 ## Things explicitly NOT to do
 
+- ❌ `git add caddy/users.users` or `caddy/admins.users` — they are gitignored on purpose; committing them leaks bcrypt hashes
+- ❌ Set the repo back to **Public** without re-auditing what's tracked
 - ❌ `docker run -p` to publish workspace ports — proxy already does it via `/u/<user>/p/<port>/`
 - ❌ Add new Azure NSG inbound rules per workspace — only 8080 (or 80/443 in prod) needs to be open
 - ❌ Use SSH tunnels to expose webapps — same proxy serves them

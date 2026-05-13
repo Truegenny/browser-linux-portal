@@ -5,3 +5,10 @@ dist/
 backups/
 .DS_Store
 portal/public/favicon.ico
+
+# Real basicauth secret files — bcrypt hashes are not as exposing as
+# plaintext passwords, but a public repo could leak them. Track only the
+# .example templates. The live files are created by ./scripts/add-user.sh
+# on each deployment.
+caddy/users.users
+caddy/admins.users

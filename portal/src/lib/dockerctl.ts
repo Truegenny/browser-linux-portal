@@ -132,7 +132,20 @@ export async function ensureWorkspace(user: string): Promise<WorkspaceInfo> {
       PidsLimit: 512,
       SecurityOpt: ['no-new-privileges:true'],
       Tmpfs: { '/tmp': 'rw,size=256m', '/run': 'rw,size=64m' },
-      CapDrop: ['SYS_ADMIN', 'NET_ADMIN', 'SYS_MODULE', 'SYS_RAWIO'],
+      // Security: drop all Linux capabilities then add back only those a
+      // dev shell with sudo actually needs. Default Docker grants 14 caps;
+      // we keep 7 and drop the others (NET_RAW, NET_BIND_SERVICE, MKNOD,
+      // SETPCAP, SETFCAP, SYS_CHROOT, AUDIT_WRITE).
+      CapDrop: ['ALL'],
+      CapAdd: [
+        'CHOWN',          // apt / npm chown of installed files
+        'DAC_OVERRIDE',   // read files across user/group permissions
+        'FOWNER',         // chmod / utime on files you don't own
+        'FSETID',         // preserve setuid/setgid on chmod
+        'KILL',           // kill processes you own
+        'SETUID',         // sudo: switch to root
+        'SETGID',         // sudo: switch group
+      ],
     },
     NetworkingConfig: {
       EndpointsConfig: {
