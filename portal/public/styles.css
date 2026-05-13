@@ -1,15 +1,62 @@
+/* ===========================================================================
+ * Theme variables
+ * ---------------------------------------------------------------------------
+ * Default :root is the DARK theme (preserves prior behavior for everyone
+ * who hadn't picked a theme yet). [data-theme="light"] overrides every
+ * variable for light mode. The toggle in the header writes
+ * data-theme to the <html> element and persists choice in localStorage;
+ * an inline script in <head> applies the saved preference before paint to
+ * avoid a flash.
+ * =========================================================================== */
 :root {
   color-scheme: dark;
-  --bg: #0b0d10;
-  --fg: #d5d8dc;
-  --mut: #8a929e;
-  --line: #2a2f36;
-  --accent: #4ade80;
-  --accent2: #7dd3fc;
-  --card: #11151a;
-  --warn: #f87171;
+  --bg:           #0b0d10;  /* page background */
+  --bg-elev:      #0e1217;  /* pre/code/inset cards */
+  --bg-hover:     #161a1f;  /* hover for secondary CTAs, nav links, ghost btns */
+  --btn-bg:       #1a1f25;  /* small action button */
+  --btn-bg-hover: #232a32;
+  --fg:           #d5d8dc;  /* primary text */
+  --fg-soft:      #c4cad2;  /* lead / paragraph */
+  --fg-soft-2:    #aab2bd;  /* card body */
+  --mut:          #8a929e;  /* muted secondary text */
+  --mut-soft:     #5e6772;  /* footer-level subtle */
+  --line:         #2a2f36;  /* borders */
+  --card:         #11151a;  /* card background */
+  --cta-fg:       #0b0d10;  /* text color INSIDE the primary CTA (sits on --accent) */
+  --accent:       #4ade80;  /* green primary */
+  --accent-hover: #22c55e;
+  --accent2:      #7dd3fc;  /* cyan link */
+  --accent3:      #c4b5fd;  /* purple (files tag) */
+  --warn:         #f87171;
+  --warn-soft:    #fca5a5;
 }
 
+[data-theme="light"] {
+  color-scheme: light;
+  --bg:           #fafafa;
+  --bg-elev:      #f3f4f6;
+  --bg-hover:     #e5e7eb;
+  --btn-bg:       #f3f4f6;
+  --btn-bg-hover: #e5e7eb;
+  --fg:           #111827;
+  --fg-soft:      #374151;
+  --fg-soft-2:    #4b5563;
+  --mut:          #6b7280;
+  --mut-soft:     #9ca3af;
+  --line:         #d1d5db;
+  --card:         #ffffff;
+  --cta-fg:       #ffffff;  /* white text on darker green button */
+  --accent:       #16a34a;  /* darker green for AAA contrast on white */
+  --accent-hover: #15803d;
+  --accent2:      #0284c7;  /* darker blue link */
+  --accent3:      #7c3aed;  /* darker purple */
+  --warn:         #dc2626;
+  --warn-soft:    #b91c1c;
+}
+
+/* ===========================================================================
+ * Base
+ * =========================================================================== */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
@@ -17,14 +64,17 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
 a { color: var(--accent2); text-decoration: none; }
 a:hover { text-decoration: underline; }
 code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-pre { background: #0e1217; border: 1px solid var(--line); border-radius: 8px;
+pre { background: var(--bg-elev); border: 1px solid var(--line); border-radius: 8px;
   padding: 14px 16px; overflow-x: auto; font-size: 13px; }
-code { background: #0e1217; border: 1px solid var(--line); border-radius: 4px;
+code { background: var(--bg-elev); border: 1px solid var(--line); border-radius: 4px;
   padding: 1px 6px; font-size: .92em; }
 em { color: var(--accent); font-style: normal; }
 
 .container { max-width: 980px; margin: 0 auto; padding: 24px; }
 
+/* ===========================================================================
+ * Header
+ * =========================================================================== */
 header.site {
   padding: 0 24px; border-bottom: 1px solid var(--line);
   display: flex; align-items: stretch; gap: 24px; flex-wrap: wrap;
@@ -48,7 +98,7 @@ header.site nav.tabs .tab {
   transition: color .12s, border-color .12s, background .12s;
 }
 header.site nav.tabs .tab:hover {
-  color: var(--fg); background: #0e1217; text-decoration: none;
+  color: var(--fg); background: var(--bg-elev); text-decoration: none;
 }
 header.site nav.tabs .tab-active {
   color: var(--fg);
@@ -79,41 +129,69 @@ header.site .who .signout {
 header.site .who .signout:hover {
   color: var(--fg);
   border-color: var(--mut);
-  background: #161a1f;
+  background: var(--bg-hover);
   text-decoration: none;
 }
 
+/* Theme toggle */
+header.site .theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  padding: 0; margin-left: 6px;
+  align-self: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--mut);
+  cursor: pointer;
+  font-size: 14px; line-height: 1;
+  transition: color .12s, border-color .12s, background .12s;
+}
+header.site .theme-toggle:hover {
+  color: var(--fg); border-color: var(--mut); background: var(--bg-hover);
+}
+header.site .theme-toggle .icon-sun { display: none; }
+header.site .theme-toggle .icon-moon { display: inline; }
+[data-theme="light"] header.site .theme-toggle .icon-sun { display: inline; }
+[data-theme="light"] header.site .theme-toggle .icon-moon { display: none; }
+
+/* ===========================================================================
+ * Hero / marketing
+ * =========================================================================== */
 .hero {
   padding: 64px 24px 48px; text-align: center; border-bottom: 1px solid var(--line);
 }
 .hero h1 { font-size: clamp(28px, 4.6vw, 48px); margin: 0 0 18px; line-height: 1.15; letter-spacing: -.5px; }
 .hero h1 .glyph { color: var(--accent); }
-.hero p.lead { font-size: clamp(15px, 1.6vw, 19px); color: #c4cad2; max-width: 760px; margin: 0 auto 28px; }
+.hero p.lead { font-size: clamp(15px, 1.6vw, 19px); color: var(--fg-soft); max-width: 760px; margin: 0 auto 28px; }
 
 .cta {
   display: inline-flex; gap: 10px; align-items: center;
-  background: var(--accent); color: #0b0d10;
+  background: var(--accent); color: var(--cta-fg);
   padding: 12px 22px; border-radius: 8px; font-weight: 600; font-size: 16px;
   border: 0; cursor: pointer;
 }
-.cta:hover { background: #22c55e; text-decoration: none; }
+.cta:hover { background: var(--accent-hover); text-decoration: none; }
 .cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 .cta.secondary { background: transparent; color: var(--fg); border: 1px solid var(--line); }
-.cta.secondary:hover { background: #161a1f; }
+.cta.secondary:hover { background: var(--bg-hover); }
 
 .badges { margin-top: 22px; color: var(--mut); font-size: 13px;
   display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; }
 .badges span::before { content: "●"; color: var(--accent); margin-right: 6px; }
 
+/* ===========================================================================
+ * Sections / cards / table
+ * =========================================================================== */
 section { padding: 56px 24px; border-bottom: 1px solid var(--line); }
 section h2 { font-size: clamp(22px, 2.6vw, 30px); margin: 0 0 18px; letter-spacing: -.3px; }
-section p { color: #c4cad2; }
+section p { color: var(--fg-soft); }
 
 .grid { display: grid; gap: 18px;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 18px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
 .card h3 { margin: 0 0 8px; font-size: 17px; }
-.card p { margin: 0; color: #aab2bd; font-size: 14px; }
+.card p { margin: 0; color: var(--fg-soft-2); font-size: 14px; }
 .card-row { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
 .card-row > div:first-child { flex: 1 1 320px; }
 .card-row .actions { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -126,10 +204,10 @@ td.no { color: var(--warn); }
 
 table.admin td.actions form { margin: 0; display: inline-flex; align-items: center; gap: 4px; }
 table.admin td.actions button {
-  background: #1a1f25; color: var(--fg); border: 1px solid var(--line);
+  background: var(--btn-bg); color: var(--fg); border: 1px solid var(--line);
   border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 13px; margin-right: 4px;
 }
-table.admin td.actions button:hover:not(:disabled) { background: #232a32; }
+table.admin td.actions button:hover:not(:disabled) { background: var(--btn-bg-hover); }
 table.admin td.actions button:disabled { opacity: .4; cursor: not-allowed; }
 
 /* Admin page header (title + refresh) */
@@ -140,7 +218,7 @@ table.admin td.actions button:disabled { opacity: .4; cursor: not-allowed; }
   color: var(--mut); font-size: 13px; text-decoration: none;
   margin-top: 4px;
 }
-.btn-ghost:hover { color: var(--fg); border-color: var(--mut); background: #161a1f; text-decoration: none; }
+.btn-ghost:hover { color: var(--fg); border-color: var(--mut); background: var(--bg-hover); text-decoration: none; }
 
 /* Sub-tabs within /admin */
 nav.subtabs {
@@ -163,7 +241,7 @@ form.user-form {
 }
 form.user-form label { display: grid; gap: 6px; font-size: 13px; color: var(--mut); }
 form.user-form input[type="text"], form.user-form input[type="password"] {
-  background: #0e1217; color: var(--fg);
+  background: var(--bg-elev); color: var(--fg);
   border: 1px solid var(--line); border-radius: 6px;
   padding: 8px 12px; font: inherit;
 }
@@ -179,10 +257,12 @@ form.user-form button.cta { justify-self: start; }
 .banner {
   border-radius: 8px; padding: 10px 14px; font-size: 14px; margin: 16px 0 0;
 }
-.banner-error { background: rgba(248, 113, 113, .1); border: 1px solid rgba(248, 113, 113, .35); color: #fca5a5; }
+.banner-error { background: rgba(248, 113, 113, .1); border: 1px solid rgba(248, 113, 113, .35); color: var(--warn-soft); }
 .banner-ok    { background: rgba(74, 222, 128, .1);  border: 1px solid rgba(74, 222, 128, .35);  color: var(--accent); }
 
-/* Dashboard 2-column layout (main + ports sidebar) */
+/* ===========================================================================
+ * Dashboard 2-column layout (main + ports sidebar)
+ * =========================================================================== */
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -204,7 +284,7 @@ ul.ports-list {
 }
 ul.ports-list .port-row {
   display: flex; align-items: center; justify-content: space-between;
-  background: #0e1217; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg-elev); border: 1px solid var(--line); border-radius: 6px;
   padding: 6px 10px;
 }
 ul.ports-list .port-row a { text-decoration: none; }
@@ -218,7 +298,7 @@ ul.ports-list .port-row code {
 }
 .port-tag.tag-webapp   { color: var(--accent);  border-color: rgba(74,222,128,.4);  background: rgba(74,222,128,.10); }
 .port-tag.tag-terminal { color: var(--accent2); border-color: rgba(125,211,252,.4); background: rgba(125,211,252,.10); }
-.port-tag.tag-files    { color: #c4b5fd;        border-color: rgba(196,181,253,.4); background: rgba(196,181,253,.10); }
+.port-tag.tag-files    { color: var(--accent3); border-color: rgba(196,181,253,.4); background: rgba(196,181,253,.10); }
 .port-tag.tag-loopback { color: var(--warn);    border-color: rgba(248,113,113,.4); background: rgba(248,113,113,.10); }
 
 @media (max-width: 880px) {
@@ -238,7 +318,7 @@ ul.ports-list .port-row code {
 }
 .copy-wrap .copy-btn.copy-ok { color: var(--accent); border-color: var(--accent); }
 .claude-briefing {
-  background: #0e1217;
+  background: var(--bg-elev);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 14px 16px;
@@ -281,13 +361,14 @@ footer.site a { color: var(--mut); }
 footer.site a:hover { color: var(--fg); }
 footer.site .version {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px; color: #5e6772; letter-spacing: .3px;
+  font-size: 11px; color: var(--mut-soft); letter-spacing: .3px;
 }
 
 @media (max-width: 560px) {
   header.site { padding: 0 12px; gap: 8px; }
   header.site nav.tabs .tab { padding: 0 10px; font-size: 13px; }
   header.site .who { font-size: 12px; }
+  header.site .theme-toggle { width: 28px; height: 28px; margin-left: 4px; }
   .hero { padding: 44px 20px 36px; }
   section { padding: 40px 20px; }
 }
