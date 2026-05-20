@@ -299,6 +299,7 @@ ul.ports-list .port-row code {
 .port-tag.tag-webapp   { color: var(--accent);  border-color: rgba(74,222,128,.4);  background: rgba(74,222,128,.10); }
 .port-tag.tag-terminal { color: var(--accent2); border-color: rgba(125,211,252,.4); background: rgba(125,211,252,.10); }
 .port-tag.tag-files    { color: var(--accent3); border-color: rgba(196,181,253,.4); background: rgba(196,181,253,.10); }
+.port-tag.tag-desktop  { color: #fbbf24;        border-color: rgba(251,191,36,.4);  background: rgba(251,191,36,.10); }
 .port-tag.tag-loopback { color: var(--warn);    border-color: rgba(248,113,113,.4); background: rgba(248,113,113,.10); }
 
 @media (max-width: 880px) {

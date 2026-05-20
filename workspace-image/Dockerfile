@@ -33,6 +33,21 @@ RUN set -eux; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
+# 2b) Graphical desktop stack — XFCE4 core, Xvfb (headless X), dbus, Firefox.
+# Same --no-install-recommends so we skip ~50 MB of optional accessories.
+# This adds ~700 MB to the image; if image size becomes a concern, the
+# heaviest single dep is firefox-esr (~250 MB).
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      xvfb dbus-x11 xauth x11-xserver-utils x11-utils \
+      xfce4 xfce4-terminal thunar \
+      firefox-esr \
+      fonts-dejavu fonts-liberation \
+      libnss-wrapper; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
+
 # 3) ttyd + filebrowser — arch-aware downloads from upstream releases.
 ARG TARGETARCH
 RUN set -eux; \
@@ -54,6 +69,28 @@ RUN set -eux; \
     chmod +x /usr/local/bin/filebrowser; \
     rm /tmp/filebrowser.tar.gz; \
     /usr/local/bin/filebrowser version
+
+# 3c) KasmVNC — modern TigerVNC fork with a built-in HTML5 web client.
+# Single binary, serves both the X display and the WebSocket+HTML on one
+# port, supports subpath via config (works behind our Caddy /u/<u>/desktop/
+# reverse proxy). Pinned to v1.3.3; bump the version line below to upgrade.
+ARG KASMVNC_VERSION=1.3.3
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) KASMVNC_ARCH=amd64 ;; \
+      arm64) KASMVNC_ARCH=arm64 ;; \
+      *) echo "Unsupported TARGETARCH=${TARGETARCH} for KasmVNC" >&2; exit 1 ;; \
+    esac; \
+    curl -fSL --retry 3 --retry-delay 2 \
+      -o /tmp/kasmvncserver.deb \
+      "https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/kasmvncserver_bookworm_${KASMVNC_VERSION}_${KASMVNC_ARCH}.deb"; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends /tmp/kasmvncserver.deb; \
+    rm /tmp/kasmvncserver.deb; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*; \
+    which vncserver Xvnc; \
+    Xvnc -version 2>&1 | head -2 || true
 
 # 3b) Pre-build a filebrowser DB with auth disabled. Each step is its own
 # RUN so a failing flag fails ONE small step and the build log shows
@@ -107,7 +144,7 @@ RUN set -eux; \
     echo 'cat /etc/motd' >> /home/node/.bashrc; \
     echo '[ -f /home/node/.first-run ] || { echo; echo "Tip: run \"claude /login\" to authenticate Claude Code."; echo; touch /home/node/.first-run; }' >> /home/node/.bashrc
 
-EXPOSE 7681
+EXPOSE 7681 7682 7683
 
 ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint.sh"]
 CMD ["bash"]

@@ -177,12 +177,16 @@ export function renderAdminPorts(args: {
   const rows = ports.map((p) => {
     const isTtyd = p.port === 7681;
     const isFiles = p.port === 7682;
+    const isDesktop = p.port === 7683;
     const filesUrl = `/u/${esc(p.user)}/files/`;
+    const desktopUrl = `/u/${esc(p.user)}/desktop/`;
     const portUrl = `/u/${esc(p.user)}/p/${p.port}/`;
     const role = isTtyd
       ? '<span class="muted small">terminal (ttyd)</span>'
       : isFiles
       ? '<span class="badge st-running">files</span>'
+      : isDesktop
+      ? '<span class="badge st-running">desktop</span>'
       : p.reachable
       ? '<span class="badge st-running">webapp</span>'
       : '<span class="muted small">loopback only</span>';
@@ -191,6 +195,8 @@ export function renderAdminPorts(args: {
       link = '<code>—</code>';
     } else if (isFiles) {
       link = `<a href="${filesUrl}" target="_blank" rel="noopener"><code>${esc(filesUrl)}</code></a>`;
+    } else if (isDesktop) {
+      link = `<a href="${desktopUrl}" target="_blank" rel="noopener"><code>${esc(desktopUrl)}</code></a>`;
     } else if (p.reachable) {
       link = `<a href="${portUrl}" target="_blank" rel="noopener"><code>${esc(portUrl)}</code></a>`;
     } else {

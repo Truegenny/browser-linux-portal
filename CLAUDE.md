@@ -35,6 +35,7 @@ conventions, and gotchas that aren't obvious from the code.
      ├──→ /app, /admin, /api  authed dashboard / admin / API     (portal)
      ├──→ /logout             cache-poison page (no auth)        (Caddy inline)
      │
+     ├──→ /u/<slug>/desktop/<…> →  ws-<auth_user>:7683  (KasmVNC + XFCE4 GUI)
      ├──→ /u/<slug>/files/<…>   →  ws-<auth_user>:7682  (filebrowser)
      ├──→ /u/<slug>/p/<port>/<…> →  ws-<auth_user>:<port>  (user webapp)
      └──→ /u/<slug>/<…>         →  ws-<auth_user>:7681  (ttyd terminal)
@@ -176,9 +177,14 @@ done
   - `filebrowser` (port 7682) — drag-drop file manager,
     DB pre-baked at `/usr/local/share/filebrowser/filebrowser.db` with
     `auth.method=noauth`, dark theme, no external links
+  - `KasmVNC` + `XFCE4` + `firefox-esr` + `xfce4-terminal` + `thunar`
+    (port 7683) — graphical desktop. KasmVNC's `subpath` is set per-
+    container via `VNC_BASEURL=/u/<user>/desktop` env, written to
+    `~/.vnc/kasmvnc.yaml` by entrypoint.sh. No KasmVNC-layer auth.
   - `claude` (Claude Code CLI, npm global)
 - User: `node` (uid 1000) with passwordless sudo
-- Entrypoint: `tini → entrypoint.sh → (filebrowser bg) + (ttyd fg)`
+- Entrypoint: `tini → entrypoint.sh → (filebrowser bg) + (KasmVNC+XFCE bg) + (ttyd fg)`
+- Image size with GUI ~2 GB; runtime RAM ~250 MB idle, ~1 GB with Firefox open.
 
 ## Things explicitly NOT to do
 
@@ -197,7 +203,8 @@ done
 
 | Version | Goal |
 |---|---|
-| **v0.7.x** (current) | Filebrowser embedded, dark mode |
+| **v0.9.x** (current) | XFCE4 GUI desktop + Firefox via KasmVNC at `/u/<user>/desktop/` |
+| v0.7.x | Filebrowser embedded, dark mode |
 | v0.8 | Auto-refresh ports sidebar (HTMX or small JS poll); workspace template variants (Python-heavy / Go-heavy / etc.) |
 | **v1.5** | Replace basic_auth with oauth2-proxy + Entra ID OIDC. Caddyfile swap; portal code unchanged because of the X-Auth-User contract. |
 | v2.0 | Per-user Anthropic API key storage (encrypted, libsodium), audit log to Postgres, group→admin sync from IdP |

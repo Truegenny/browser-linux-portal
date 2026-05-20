@@ -22,6 +22,7 @@ export function renderDashboard(args: {
            <button class="cta">Start workspace</button>
          </form>`
       : `<a class="cta" href="/u/${esc(user)}/" target="_blank" rel="noopener">Open terminal →</a>
+         <a class="cta secondary" href="/u/${esc(user)}/desktop/" target="_blank" rel="noopener">Open desktop →</a>
          <a class="cta secondary" href="/u/${esc(user)}/files/" target="_blank" rel="noopener">Open files →</a>
          <form method="post" action="/api/workspace/stop" style="display:inline">
            <button class="cta secondary">Stop</button>
@@ -120,8 +121,10 @@ cross-user access is impossible.
     .map((p) => {
       const isTtyd = p.port === 7681;
       const isFiles = p.port === 7682;
+      const isDesktop = p.port === 7683;
       const webappUrl = `/u/${esc(user)}/p/${p.port}/`;
       const filesUrl = `/u/${esc(user)}/files/`;
+      const desktopUrl = `/u/${esc(user)}/desktop/`;
       let label: string;
       let body: string;
       if (isTtyd) {
@@ -130,6 +133,9 @@ cross-user access is impossible.
       } else if (isFiles) {
         label = '<span class="port-tag tag-files">files</span>';
         body = `<a href="${filesUrl}" target="_blank" rel="noopener"><code>${p.port}</code></a>`;
+      } else if (isDesktop) {
+        label = '<span class="port-tag tag-desktop">desktop</span>';
+        body = `<a href="${desktopUrl}" target="_blank" rel="noopener"><code>${p.port}</code></a>`;
       } else if (p.reachable) {
         label = '<span class="port-tag tag-webapp">webapp</span>';
         body = `<a href="${webappUrl}" target="_blank" rel="noopener"><code>${p.port}</code></a>`;

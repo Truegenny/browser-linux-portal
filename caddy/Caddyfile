@@ -116,9 +116,17 @@
 	handle_path /u/* {
 		import user_auth
 
-		# File browser (filebrowser) — most specific, matched FIRST.
-		# We DON'T strip the prefix; instead we rewrite it onto the
-		# auth user's slug so filebrowser sees its own baseurl.
+		# Desktop (KasmVNC / XFCE4) — matched first because it's specific
+		# and KasmVNC's HTML uses absolute URLs that need the /u/<user>/desktop
+		# prefix preserved end-to-end. We rewrite the URL slot to the auth
+		# user so KasmVNC's configured `subpath` always matches what arrives.
+		@desktop path_regexp udesk ^/[^/]+/desktop(/.*)?$
+		handle @desktop {
+			rewrite * /u/{http.auth.user.id}/desktop{http.regexp.udesk.1}
+			reverse_proxy ws-{http.auth.user.id}:7683
+		}
+
+		# File browser (filebrowser).
 		@files path_regexp ufiles ^/[^/]+/files(/.*)?$
 		handle @files {
 			rewrite * /u/{http.auth.user.id}/files{http.regexp.ufiles.1}
