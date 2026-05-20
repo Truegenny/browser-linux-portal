@@ -74,6 +74,12 @@ RUN set -eux; \
 # Single binary, serves both the X display and the WebSocket+HTML on one
 # port, supports subpath via config (works behind our Caddy /u/<u>/desktop/
 # reverse proxy). Pinned to v1.3.3; bump the version line below to upgrade.
+#
+# The vncserver wrapper is a Perl script that needs DateTime + a few CPAN
+# modules. The .deb declares them as Recommends (not Depends), so our
+# --no-install-recommends silently skipped them and the wrapper failed at
+# runtime with "Can't locate DateTime.pm in @INC". We now install the
+# wrapper's perl dependencies explicitly alongside the .deb.
 ARG KASMVNC_VERSION=1.3.3
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
@@ -85,12 +91,22 @@ RUN set -eux; \
       -o /tmp/kasmvncserver.deb \
       "https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/kasmvncserver_bookworm_${KASMVNC_VERSION}_${KASMVNC_ARCH}.deb"; \
     apt-get update; \
-    apt-get install -y --no-install-recommends /tmp/kasmvncserver.deb; \
+    apt-get install -y --no-install-recommends \
+      /tmp/kasmvncserver.deb \
+      libdatetime-perl \
+      libyaml-tiny-perl \
+      libtry-tiny-perl \
+      libhash-merge-perl \
+      libnet-ssleay-perl \
+      libswitch-perl; \
     rm /tmp/kasmvncserver.deb; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*; \
     which vncserver Xvnc; \
-    Xvnc -version 2>&1 | head -2 || true
+    # Smoke-test the wrapper script — fails the build if any perl dep
+    # is still missing.
+    vncserver --help 2>&1 | head -5 || true; \
+    perl -MDateTime -MYAML::Tiny -MTry::Tiny -MHash::Merge -e 'print "perl deps ok\n"'
 
 # 3b) Pre-build a filebrowser DB with auth disabled. Each step is its own
 # RUN so a failing flag fails ONE small step and the build log shows
