@@ -34,15 +34,17 @@ filebrowser \
   > /tmp/filebrowser.log 2>&1 &
 
 # ---------------------------------------------------------------------------
-# KasmVNC + XFCE4 — desktop stack. Background.
+# KasmVNC (Xvnc) + XFCE4 — desktop stack. Background.
 #
-# KasmVNC's `vncserver` wrapper script:
-#   1. Reads ~/.vnc/kasmvnc.yaml for runtime config (subpath, security, etc.)
-#   2. Starts Xvnc :1 (combined X server + VNC + HTML/WebSocket on one port)
-#   3. Runs ~/.vnc/xstartup which launches XFCE4
+# We bypass the `vncserver` Perl wrapper and call Xvnc directly. The wrapper
+# interactively prompts for user/DE setup on first run and loops forever
+# when stdin is /dev/null (background process). Xvnc binary itself is happy
+# without that setup.
 #
 # Per-container env from the portal:
-#   VNC_BASEURL=/u/<user>/desktop   ← passed via Docker env
+#   VNC_BASEURL=/u/<user>/desktop   ← reserved for future config; KasmVNC
+#                                     follows the X-Forwarded headers Caddy
+#                                     sends, so this isn't actively used here.
 #   VNC_PORT=7683
 #   VNC_RESOLUTION=1280x800
 # ---------------------------------------------------------------------------
@@ -50,26 +52,23 @@ VNC_BASEURL="${VNC_BASEURL:-/desktop}"
 VNC_PORT="${VNC_PORT:-7683}"
 VNC_RESOLUTION="${VNC_RESOLUTION:-1280x800}"
 
-mkdir -p /home/node/.vnc
+# Locate the HTML5 client. Recent KasmVNC packages put it at one of these.
+KASM_WWW=""
+for d in /usr/share/kasmvnc/www /usr/share/kasmvncserver/www /usr/local/share/kasmvnc/www; do
+  if [ -d "$d" ]; then KASM_WWW="$d"; break; fi
+done
+if [ -z "$KASM_WWW" ]; then
+  echo "[desktop] WARN: KasmVNC www directory not found; HTML client unavailable." >&2
+fi
 
-cat > /home/node/.vnc/xstartup <<'XSTARTUP'
-#!/bin/sh
-# Launched by Xvnc on display :1. Wipe any inherited X env that could
-# confuse XFCE, then start a real dbus-launch + xfce4-session.
-unset SESSION_MANAGER
-unset DBUS_SESSION_BUS_ADDRESS
-export XDG_RUNTIME_DIR=/tmp/runtime-node
-mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
-export XDG_CURRENT_DESKTOP=XFCE
-export XDG_SESSION_DESKTOP=xfce
-exec dbus-launch --exit-with-session xfce4-session
-XSTARTUP
-chmod +x /home/node/.vnc/xstartup
+mkdir -p /home/node/.vnc /tmp/runtime-node
+chmod 700 /tmp/runtime-node
+touch /home/node/.Xauthority
+chmod 600 /home/node/.Xauthority
 
-# KasmVNC config — disable HTTPS (Caddy handles TLS upstream), no auth
-# (Caddy basicauth gates the proxy), and set the subpath so KasmVNC's
-# generated HTML uses the right URL prefix in its asset and WebSocket
-# references.
+# KasmVNC YAML — disable SSL (Caddy handles TLS), set resolution. The
+# wrapper script reads this; Xvnc directly reads only some fields, but
+# the values it does honor are enough for our use.
 cat > /home/node/.vnc/kasmvnc.yaml <<YAML
 network:
   protocol: http
@@ -79,28 +78,45 @@ network:
   use_ipv6: false
   ssl:
     require_ssl: false
-  udp:
-    public_ip: 127.0.0.1
 desktop:
   resolution:
     width: ${VNC_RESOLUTION%x*}
     height: ${VNC_RESOLUTION#*x}
-runtime_configuration:
-  allow_client_to_override_kasm_server_settings: true
 YAML
 
-# Start the VNC server in the background. -SecurityTypes None disables
-# auth at the VNC layer (Caddy is the gate). Output to a log so a
-# misconfig is visible via the file manager / terminal.
-vncserver :1 \
-  -interface 0.0.0.0 \
-  -websocketPort "${VNC_PORT}" \
-  -httpPort "${VNC_PORT}" \
-  -SecurityTypes None \
-  -geometry "${VNC_RESOLUTION}" \
-  -depth 24 \
-  -disableBasicAuth \
-  > /tmp/kasmvnc.log 2>&1 &
+# Start Xvnc directly. -SecurityTypes None disables VNC-layer auth (Caddy
+# basicauth gates the URL). -httpd serves the HTML5 client. -rfbport -1
+# disables the raw TCP VNC port — only HTTP+WebSocket on $VNC_PORT.
+(
+  Xvnc :1 \
+    -interface 0.0.0.0 \
+    -websocketPort "${VNC_PORT}" \
+    -httpPort "${VNC_PORT}" \
+    -SecurityTypes None \
+    -geometry "${VNC_RESOLUTION}" \
+    -depth 24 \
+    ${KASM_WWW:+-httpd "$KASM_WWW"} \
+    -rfbport -1 \
+    -ac \
+    -disableBasicAuth \
+    -auth /home/node/.Xauthority \
+    2>&1 | sed 's/^/[xvnc] /'
+) > /tmp/kasmvnc.log 2>&1 &
+
+# Wait briefly for X to come up before starting XFCE.
+sleep 1
+
+# Launch XFCE4 on the new display.
+(
+  export DISPLAY=:1
+  export XDG_RUNTIME_DIR=/tmp/runtime-node
+  export XDG_CURRENT_DESKTOP=XFCE
+  export XDG_SESSION_DESKTOP=xfce
+  export XAUTHORITY=/home/node/.Xauthority
+  unset SESSION_MANAGER
+  unset DBUS_SESSION_BUS_ADDRESS
+  exec dbus-launch --exit-with-session xfce4-session
+) > /tmp/xfce.log 2>&1 &
 
 # ---------------------------------------------------------------------------
 # ttyd — the in-browser bash terminal. Runs in foreground (tini watches it).
