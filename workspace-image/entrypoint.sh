@@ -85,13 +85,17 @@ desktop:
 YAML
 
 # Start Xvnc directly. -SecurityTypes None disables VNC-layer auth (Caddy
-# basicauth gates the URL). -httpd serves the HTML5 client. -rfbport -1
-# disables the raw TCP VNC port — only HTTP+WebSocket on $VNC_PORT.
+# basicauth gates the URL). -httpd serves the HTML5 client on the same
+# websocketPort. -rfbport -1 disables the raw TCP VNC port.
+#
+# NOTE: there is NO `-httpPort` flag in Xvnc. `-websocketPort` serves
+# both the HTTP HTML/asset endpoint AND the WebSocket upgrade on the
+# same port. Including `-httpPort` kills Xvnc at startup with
+# "(EE) Unrecognized option: -httpPort".
 (
   Xvnc :1 \
     -interface 0.0.0.0 \
     -websocketPort "${VNC_PORT}" \
-    -httpPort "${VNC_PORT}" \
     -SecurityTypes None \
     -geometry "${VNC_RESOLUTION}" \
     -depth 24 \
