@@ -15,31 +15,23 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Filebrowser — fresh DB each start, --noauth CLI flag.
+# Filebrowser — fresh DB each start, configured entirely via env vars.
 #
-# filebrowser >=2.63 redesigned its routing and the pre-baked DB from
-# image build returns 404 on every route. Starting from a clean DB and
-# using --noauth at the command line (rather than baking auth.method
-# into the DB) sidesteps the issue cleanly. The user volume preserves
-# /home/node contents; only the DB at /tmp is ephemeral, which is fine
-# because with --noauth there's no user state to keep.
+# filebrowser v2.63.x silently ignores `--noauth` on the CLI (older versions
+# accepted it). The supported way is auth.method=noauth set via config or
+# the FB_AUTH_METHOD env var. We use env vars for everything so the binary
+# can be invoked with no flags at all.
 # ---------------------------------------------------------------------------
-FB_DB="${FB_DATABASE:-/tmp/filebrowser.db}"
-FB_ROOT="${FB_ROOT:-/home/node}"
-FB_PORT="${FB_PORT:-7682}"
-FB_ADDRESS="${FB_ADDRESS:-0.0.0.0}"
-FB_BASEURL="${FB_BASEURL:-/files}"
+export FB_DATABASE="${FB_DATABASE:-/tmp/filebrowser.db}"
+export FB_ROOT="${FB_ROOT:-/home/node}"
+export FB_PORT="${FB_PORT:-7682}"
+export FB_ADDRESS="${FB_ADDRESS:-0.0.0.0}"
+export FB_BASEURL="${FB_BASEURL:-/files}"
+export FB_AUTH_METHOD=noauth
 
-rm -f "$FB_DB"
+rm -f "$FB_DATABASE"
 
-filebrowser \
-  --noauth \
-  --database "$FB_DB" \
-  --root "$FB_ROOT" \
-  --address "$FB_ADDRESS" \
-  --port "$FB_PORT" \
-  --baseURL "$FB_BASEURL" \
-  > /tmp/filebrowser.log 2>&1 &
+filebrowser > /tmp/filebrowser.log 2>&1 &
 
 # ---------------------------------------------------------------------------
 # KasmVNC (vncserver wrapper) + XFCE4 — desktop stack. Background.
@@ -61,18 +53,12 @@ VNC_RESOLUTION="${VNC_RESOLUTION:-1280x800}"
 mkdir -p /home/node/.vnc /tmp/runtime-node
 chmod 700 /tmp/runtime-node
 
-# xstartup launches XFCE4 against the display Xvnc opens.
-cat > /home/node/.vnc/xstartup <<'XSTARTUP'
-#!/bin/sh
-unset SESSION_MANAGER
-unset DBUS_SESSION_BUS_ADDRESS
-export XDG_RUNTIME_DIR=/tmp/runtime-node
-mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
-export XDG_CURRENT_DESKTOP=XFCE
-export XDG_SESSION_DESKTOP=xfce
-exec dbus-launch --exit-with-session xfce4-session
-XSTARTUP
-chmod +x /home/node/.vnc/xstartup
+# Important: do NOT pre-create ~/.vnc/xstartup. The KasmVNC wrapper's
+# select-de.sh asks "WARNING: xstartup will be overwritten y/N?" if one
+# already exists, then fails when stdin is a pipe of "1\n" lines (none
+# of which match y or N). Letting select-de.sh write its own xstartup
+# the first time skips the overwrite prompt entirely.
+rm -f /home/node/.vnc/xstartup
 
 # Pre-seed a user record so the vncserver wrapper doesn't prompt. The
 # password is never used (we run with -SecurityTypes None below; Caddy
