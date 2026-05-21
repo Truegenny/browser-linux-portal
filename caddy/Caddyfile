@@ -128,8 +128,15 @@
 		# KasmVNC 1.3.3 doesn't support a subpath config setting;
 		# this URL-param trick is the workaround. The entry point is
 		# /index.html (NOT /vnc.html — that 404s in this build).
+		#
+		# Both the redirect and the proxy-pass below must be inside
+		# `handle` blocks so they're at the same Caddy priority and
+		# declaration order wins; a bare top-level `redir` is sorted
+		# AFTER `handle` and never fires.
 		@desktop_root path_regexp dskroot ^/[^/]+/desktop/?$
-		redir @desktop_root /u/{http.auth.user.id}/desktop/index.html?path=u/{http.auth.user.id}/desktop/websockify 302
+		handle @desktop_root {
+			redir * /u/{http.auth.user.id}/desktop/index.html?path=u/{http.auth.user.id}/desktop/websockify 302
+		}
 
 		# Everything under /u/<user>/desktop/<...>  → strip the prefix
 		# and proxy to KasmVNC at the root of its own httpd. KasmVNC
