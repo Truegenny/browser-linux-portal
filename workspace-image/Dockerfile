@@ -53,7 +53,10 @@ RUN set -eux; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*; \
     # Generate the snakeoil cert/key if not already present.
-    test -f /etc/ssl/private/ssl-cert-snakeoil.key || /usr/sbin/make-ssl-cert generate-default-snakeoil --force-overwrite
+    test -f /etc/ssl/private/ssl-cert-snakeoil.key || /usr/sbin/make-ssl-cert generate-default-snakeoil --force-overwrite; \
+    # The snakeoil key is owned root:ssl-cert mode 0640. Put node in the
+    # ssl-cert group so KasmVNC (running as node) can read it.
+    usermod -aG ssl-cert node
 
 # 3) ttyd + filebrowser — arch-aware downloads from upstream releases.
 ARG TARGETARCH

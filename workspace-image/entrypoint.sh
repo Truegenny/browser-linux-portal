@@ -27,15 +27,20 @@ FB_BASEURL="${FB_BASEURL:-/files}"
 rm -f "$FB_DB"
 filebrowser config init  --database "$FB_DB" >/dev/null
 filebrowser config set   --auth.method=noauth --database "$FB_DB" >/dev/null
+# Set baseurl in the DB too — the --baseurl CLI flag wasn't sticking in
+# our v2.32 + env-vars setup, so we set it explicitly as a config value.
+filebrowser config set   --baseurl="$FB_BASEURL"  --database "$FB_DB" >/dev/null 2>&1 || true
 # noauth still wants a "current user" record.
 filebrowser users add nobody noauth_placeholder_unused_xx --perm.admin --database "$FB_DB" >/dev/null 2>&1 || true
+
+# Unset FB_BASEURL env so it doesn't fight the DB setting.
+unset FB_BASEURL
 
 filebrowser \
   --database "$FB_DB" \
   --root "$FB_ROOT_DIR" \
   --address "$FB_ADDRESS" \
   --port "$FB_PORT" \
-  --baseurl "$FB_BASEURL" \
   > /tmp/filebrowser.log 2>&1 &
 
 # ---------------------------------------------------------------------------
