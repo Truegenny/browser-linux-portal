@@ -41,14 +41,15 @@ rm -f "$FB_DB"
   filebrowser config cat --database "$FB_DB"
 } > /tmp/filebrowser-init.log 2>&1 || true
 
-# Unset FB_BASEURL env so it doesn't fight the DB setting.
-unset FB_BASEURL
-
+# Keep FB_BASEURL env set AND pass --baseurl on the CLI so DB + env + flag
+# all agree. Unsetting the env caused filebrowser to override the DB value
+# with an empty string and 404 the configured base URL.
 filebrowser \
   --database "$FB_DB" \
   --root "$FB_ROOT_DIR" \
   --address "$FB_ADDRESS" \
   --port "$FB_PORT" \
+  --baseurl "$FB_BASEURL" \
   > /tmp/filebrowser.log 2>&1 &
 
 # ---------------------------------------------------------------------------

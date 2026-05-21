@@ -116,15 +116,21 @@
 	handle_path /u/* {
 		import user_auth
 
-		# Desktop (KasmVNC / XFCE4). Xvnc serves at the root of its own
-		# httpd and uses relative URLs in its HTML, so we strip the
-		# /<slug>/desktop prefix before proxying. The browser stays at
-		# /u/<slug>/desktop/ and computes asset URLs relative to that,
-		# which re-enter this same handler and get proxied correctly.
+		# Desktop (KasmVNC / XFCE4). KasmVNC serves HTTPS only with a
+		# self-signed snakeoil cert; Caddy talks to it as an HTTPS
+		# upstream with tls_insecure_skip_verify (the connection is
+		# inside portal-net, so no real-world MITM risk). We strip the
+		# /<slug>/desktop prefix because KasmVNC's HTML uses relative
+		# URLs and serves at its own root.
 		@desktop path_regexp udesk ^/[^/]+/desktop(/.*)?$
 		handle @desktop {
 			rewrite * {http.regexp.udesk.1}
-			reverse_proxy ws-{http.auth.user.id}:7683
+			reverse_proxy https://ws-{http.auth.user.id}:7683 {
+				transport http {
+					tls
+					tls_insecure_skip_verify
+				}
+			}
 		}
 
 		# File browser (filebrowser).
