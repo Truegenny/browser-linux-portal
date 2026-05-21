@@ -85,7 +85,11 @@ rm -f /home/node/.vnc/xstartup
 echo -e "kasm_unused_password_xx\nkasm_unused_password_xx\n" \
   | kasmvncpasswd -u kasm_user -w >/dev/null 2>&1 || true
 
-# kasmvnc.yaml — disable SSL (Caddy handles TLS upstream), set resolution.
+# kasmvnc.yaml — set subpath so the HTML5 client's generated URLs (assets,
+# WebSocket) include the /u/<user>/desktop prefix that Caddy proxies on.
+# Without subpath, the JS uses absolute /websockify which 404s through
+# our reverse proxy.
+VNC_SUBPATH="${VNC_BASEURL:-/desktop}"
 cat > /home/node/.vnc/kasmvnc.yaml <<YAML
 network:
   protocol: http
@@ -93,6 +97,7 @@ network:
   websocket_port: ${VNC_PORT}
   use_ipv4: true
   use_ipv6: false
+  subpath: ${VNC_SUBPATH}
   ssl:
     require_ssl: false
 desktop:

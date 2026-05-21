@@ -124,7 +124,13 @@
 		# URLs and serves at its own root.
 		@desktop path_regexp udesk ^/[^/]+/desktop(/.*)?$
 		handle @desktop {
-			rewrite * {http.regexp.udesk.1}
+			# KEEP the /u/<user>/desktop prefix end-to-end. KasmVNC is
+			# configured with that same subpath in kasmvnc.yaml, so the
+			# generated HTML uses /u/<user>/desktop/<...> for asset and
+			# WebSocket URLs — matches the path that the browser sends.
+			# We still rewrite the URL slot to the auth user for the same
+			# cross-user safety the other routes use.
+			rewrite * /u/{http.auth.user.id}/desktop{http.regexp.udesk.1}
 			# NB: no `https://` scheme in the upstream — Caddy refuses
 			# placeholders when a scheme is present. The `tls` line in
 			# the transport block is what enables HTTPS.
