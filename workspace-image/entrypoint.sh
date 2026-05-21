@@ -105,12 +105,11 @@ desktop:
     height: ${VNC_RESOLUTION#*x}
 YAML
 
-# Launch via the wrapper. The newer KasmVNC 1.3.x wrapper always runs
-# select-de.sh on first start which prompts for DE choice. With stdin
-# being /dev/null in a background context, the read returns empty and
-# the script bails. Piping `yes 1` keeps a continuous stream of "1\n"
-# on stdin — select-de picks XFCE (option 1) and any subsequent prompts
-# also get "1" which is the safe default for everything else.
+# Launch via the wrapper. `yes 1` answers select-de.sh's DE prompt with
+# "1" (XFCE). The wrapper still writes a default twm+xterm xstartup
+# regardless of what we pick — its XFCE detection apparently can't find
+# our xfce4 install in --no-install-recommends mode. So below we launch
+# xfce4-session ourselves on display :1 after the wrapper is up.
 #
 # -SecurityTypes None disables VNC-layer auth (Caddy basicauth gates
 # the URL); -disableBasicAuth disables KasmVNC's own basicauth layer.
@@ -122,6 +121,21 @@ yes 1 | vncserver :1 \
   -depth 24 \
   -disableBasicAuth \
   > /tmp/kasmvnc.log 2>&1 &
+
+# Wait for Xvnc :1 to be ready, then kill the default twm/xterm session
+# the wrapper started and launch xfce4-session on the same display.
+sleep 3
+pkill -x twm   2>/dev/null || true
+pkill -x xterm 2>/dev/null || true
+(
+  export DISPLAY=:1
+  export XDG_RUNTIME_DIR=/tmp/runtime-node
+  export XDG_CURRENT_DESKTOP=XFCE
+  export XDG_SESSION_DESKTOP=xfce
+  unset SESSION_MANAGER
+  unset DBUS_SESSION_BUS_ADDRESS
+  exec dbus-launch --exit-with-session xfce4-session
+) > /tmp/xfce.log 2>&1 &
 
 # ---------------------------------------------------------------------------
 # ttyd — the in-browser bash terminal. Runs in foreground (tini watches it).

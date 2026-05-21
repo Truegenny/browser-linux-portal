@@ -122,13 +122,14 @@
 		# inside portal-net, so no real-world MITM risk). We strip the
 		# /<slug>/desktop prefix because KasmVNC's HTML uses relative
 		# URLs and serves at its own root.
-		# Bare /u/<user>/desktop[/] → redirect to vnc.html with a `path`
-		# query param so the noVNC HTML5 client opens its WebSocket at
-		# the prefixed URL (which we proxy correctly). KasmVNC 1.3.3
-		# doesn't support a subpath config setting; this URL-param trick
-		# is the workaround.
+		# Bare /u/<user>/desktop[/] → redirect to index.html with a
+		# `path` query param so the noVNC HTML5 client opens its
+		# WebSocket at the prefixed URL (which we proxy correctly).
+		# KasmVNC 1.3.3 doesn't support a subpath config setting;
+		# this URL-param trick is the workaround. The entry point is
+		# /index.html (NOT /vnc.html — that 404s in this build).
 		@desktop_root path_regexp dskroot ^/[^/]+/desktop/?$
-		redir @desktop_root /u/{http.auth.user.id}/desktop/vnc.html?path=u/{http.auth.user.id}/desktop/websockify 302
+		redir @desktop_root /u/{http.auth.user.id}/desktop/index.html?path=u/{http.auth.user.id}/desktop/websockify 302
 
 		# Everything under /u/<user>/desktop/<...>  → strip the prefix
 		# and proxy to KasmVNC at the root of its own httpd. KasmVNC
