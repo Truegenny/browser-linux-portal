@@ -85,11 +85,11 @@ rm -f /home/node/.vnc/xstartup
 echo -e "kasm_unused_password_xx\nkasm_unused_password_xx\n" \
   | kasmvncpasswd -u kasm_user -w >/dev/null 2>&1 || true
 
-# kasmvnc.yaml — set subpath so the HTML5 client's generated URLs (assets,
-# WebSocket) include the /u/<user>/desktop prefix that Caddy proxies on.
-# Without subpath, the JS uses absolute /websockify which 404s through
-# our reverse proxy.
-VNC_SUBPATH="${VNC_BASEURL:-/desktop}"
+# kasmvnc.yaml — KasmVNC v1.3.3 doesn't support a `subpath` config key
+# (it rejects "Unsupported config keys found: network.subpath" and fails
+# to start). Instead we rely on Caddy redirecting the bare desktop URL
+# to vnc.html?path=u/<user>/desktop/websockify so the noVNC HTML5 client
+# uses the prefixed WebSocket path.
 cat > /home/node/.vnc/kasmvnc.yaml <<YAML
 network:
   protocol: http
@@ -97,7 +97,6 @@ network:
   websocket_port: ${VNC_PORT}
   use_ipv4: true
   use_ipv6: false
-  subpath: ${VNC_SUBPATH}
   ssl:
     require_ssl: false
 desktop:
