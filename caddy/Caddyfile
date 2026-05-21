@@ -125,10 +125,14 @@
 		@desktop path_regexp udesk ^/[^/]+/desktop(/.*)?$
 		handle @desktop {
 			rewrite * {http.regexp.udesk.1}
-			reverse_proxy https://ws-{http.auth.user.id}:7683 {
+			# NB: no `https://` scheme in the upstream — Caddy refuses
+			# placeholders when a scheme is present. The `tls` line in
+			# the transport block is what enables HTTPS.
+			reverse_proxy ws-{http.auth.user.id}:7683 {
 				transport http {
 					tls
 					tls_insecure_skip_verify
+					tls_server_name ws-{http.auth.user.id}
 				}
 			}
 		}
