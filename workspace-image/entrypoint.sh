@@ -30,7 +30,7 @@ filebrowser \
   --root "$FB_ROOT" \
   --address "$FB_ADDRESS" \
   --port "$FB_PORT" \
-  --baseurl "$FB_BASEURL" \
+  --baseURL "$FB_BASEURL" \
   > /tmp/filebrowser.log 2>&1 &
 
 # ---------------------------------------------------------------------------

@@ -116,13 +116,14 @@
 	handle_path /u/* {
 		import user_auth
 
-		# Desktop (KasmVNC / XFCE4) — matched first because it's specific
-		# and KasmVNC's HTML uses absolute URLs that need the /u/<user>/desktop
-		# prefix preserved end-to-end. We rewrite the URL slot to the auth
-		# user so KasmVNC's configured `subpath` always matches what arrives.
+		# Desktop (KasmVNC / XFCE4). Xvnc serves at the root of its own
+		# httpd and uses relative URLs in its HTML, so we strip the
+		# /<slug>/desktop prefix before proxying. The browser stays at
+		# /u/<slug>/desktop/ and computes asset URLs relative to that,
+		# which re-enter this same handler and get proxied correctly.
 		@desktop path_regexp udesk ^/[^/]+/desktop(/.*)?$
 		handle @desktop {
-			rewrite * /u/{http.auth.user.id}/desktop{http.regexp.udesk.1}
+			rewrite * {http.regexp.udesk.1}
 			reverse_proxy ws-{http.auth.user.id}:7683
 		}
 
