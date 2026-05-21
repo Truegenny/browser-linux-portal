@@ -96,8 +96,16 @@ desktop:
     height: ${VNC_RESOLUTION#*x}
 YAML
 
-# Launch via the wrapper. -SecurityTypes None disables VNC-layer auth.
-vncserver :1 \
+# Launch via the wrapper. The newer KasmVNC 1.3.x wrapper always runs
+# select-de.sh on first start which prompts for DE choice. With stdin
+# being /dev/null in a background context, the read returns empty and
+# the script bails. Piping `yes 1` keeps a continuous stream of "1\n"
+# on stdin — select-de picks XFCE (option 1) and any subsequent prompts
+# also get "1" which is the safe default for everything else.
+#
+# -SecurityTypes None disables VNC-layer auth (Caddy basicauth gates
+# the URL); -disableBasicAuth disables KasmVNC's own basicauth layer.
+yes 1 | vncserver :1 \
   -interface 0.0.0.0 \
   -websocketPort "${VNC_PORT}" \
   -SecurityTypes None \
