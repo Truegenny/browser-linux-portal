@@ -54,11 +54,15 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*; \
     # Generate the snakeoil cert/key if not already present.
     test -f /etc/ssl/private/ssl-cert-snakeoil.key || /usr/sbin/make-ssl-cert generate-default-snakeoil --force-overwrite; \
-    # The snakeoil key is owned root:ssl-cert mode 0640. usermod isn't
-    # in node:20-bookworm-slim (passwd package stripped), so just make
-    # the key world-readable. Safe enough — it's a self-signed dev cert
-    # in a sandboxed container, never anything sensitive.
-    chmod a+r /etc/ssl/private/ssl-cert-snakeoil.key
+    # Both the file AND the parent directory need to be readable by node:
+    # /etc/ssl/private/ defaults to mode 0710 (root:ssl-cert), which blocks
+    # traversal for anyone not in the ssl-cert group. Chmod both so the
+    # file is reachable. Safe enough — it's a self-signed dev cert in a
+    # sandboxed container.
+    chmod a+rx /etc/ssl/private; \
+    chmod a+r  /etc/ssl/private/ssl-cert-snakeoil.key; \
+    chmod a+r  /etc/ssl/private/ssl-cert-snakeoil.pem 2>/dev/null || true; \
+    ls -la /etc/ssl/private/
 
 # 3) ttyd + filebrowser — arch-aware downloads from upstream releases.
 ARG TARGETARCH
