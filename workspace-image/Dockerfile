@@ -37,6 +37,10 @@ RUN set -eux; \
 # Same --no-install-recommends so we skip ~50 MB of optional accessories.
 # This adds ~700 MB to the image; if image size becomes a concern, the
 # heaviest single dep is firefox-esr (~250 MB).
+#
+# `ssl-cert` provides /etc/ssl/private/ssl-cert-snakeoil.{pem,key}, which
+# the KasmVNC wrapper tries to load on startup even when we configure
+# HTTP-only. Without it, vncserver fails at cert load and never binds.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -44,9 +48,12 @@ RUN set -eux; \
       xfce4 xfce4-terminal thunar \
       firefox-esr \
       fonts-dejavu fonts-liberation \
-      libnss-wrapper; \
+      libnss-wrapper \
+      ssl-cert; \
     apt-get clean; \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/*; \
+    # Generate the snakeoil cert/key if not already present.
+    test -f /etc/ssl/private/ssl-cert-snakeoil.key || /usr/sbin/make-ssl-cert generate-default-snakeoil --force-overwrite
 
 # 3) ttyd + filebrowser — arch-aware downloads from upstream releases.
 ARG TARGETARCH
@@ -63,8 +70,13 @@ RUN set -eux; \
     chmod +x /usr/local/bin/ttyd; \
     /usr/local/bin/ttyd --version; \
     \
+    # Pin filebrowser to v2.32.0. Newer 2.63.x has a rewritten SPA that
+    # ignores --noauth/--baseURL CLI flags as we use them, breaks our
+    # routing, and quick-bootstraps an admin user even with auth.method=
+    # noauth. 2.32.0 is the last release that worked cleanly with this
+    # stack. Revisit when 2.6x stabilizes or when we move to OIDC.
     curl -fSL --retry 3 --retry-delay 2 -o /tmp/filebrowser.tar.gz \
-      "https://github.com/filebrowser/filebrowser/releases/latest/download/linux-${FB_ARCH}-filebrowser.tar.gz"; \
+      "https://github.com/filebrowser/filebrowser/releases/download/v2.32.0/linux-${FB_ARCH}-filebrowser.tar.gz"; \
     tar -xzf /tmp/filebrowser.tar.gz -C /usr/local/bin filebrowser; \
     chmod +x /usr/local/bin/filebrowser; \
     rm /tmp/filebrowser.tar.gz; \

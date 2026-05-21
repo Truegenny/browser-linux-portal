@@ -15,23 +15,28 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Filebrowser — fresh DB each start, configured entirely via env vars.
-#
-# filebrowser v2.63.x silently ignores `--noauth` on the CLI (older versions
-# accepted it). The supported way is auth.method=noauth set via config or
-# the FB_AUTH_METHOD env var. We use env vars for everything so the binary
-# can be invoked with no flags at all.
+# Filebrowser (pinned to v2.32.0 in the Dockerfile) — initialize a fresh DB
+# with auth.method=noauth + a placeholder user, then start.
 # ---------------------------------------------------------------------------
-export FB_DATABASE="${FB_DATABASE:-/tmp/filebrowser.db}"
-export FB_ROOT="${FB_ROOT:-/home/node}"
-export FB_PORT="${FB_PORT:-7682}"
-export FB_ADDRESS="${FB_ADDRESS:-0.0.0.0}"
-export FB_BASEURL="${FB_BASEURL:-/files}"
-export FB_AUTH_METHOD=noauth
+FB_DB="${FB_DATABASE:-/tmp/filebrowser.db}"
+FB_ROOT_DIR="${FB_ROOT:-/home/node}"
+FB_PORT="${FB_PORT:-7682}"
+FB_ADDRESS="${FB_ADDRESS:-0.0.0.0}"
+FB_BASEURL="${FB_BASEURL:-/files}"
 
-rm -f "$FB_DATABASE"
+rm -f "$FB_DB"
+filebrowser config init  --database "$FB_DB" >/dev/null
+filebrowser config set   --auth.method=noauth --database "$FB_DB" >/dev/null
+# noauth still wants a "current user" record.
+filebrowser users add nobody noauth_placeholder_unused_xx --perm.admin --database "$FB_DB" >/dev/null 2>&1 || true
 
-filebrowser > /tmp/filebrowser.log 2>&1 &
+filebrowser \
+  --database "$FB_DB" \
+  --root "$FB_ROOT_DIR" \
+  --address "$FB_ADDRESS" \
+  --port "$FB_PORT" \
+  --baseurl "$FB_BASEURL" \
+  > /tmp/filebrowser.log 2>&1 &
 
 # ---------------------------------------------------------------------------
 # KasmVNC (vncserver wrapper) + XFCE4 — desktop stack. Background.
