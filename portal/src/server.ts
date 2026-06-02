@@ -16,6 +16,7 @@ import {
   listWorkspaces,
   workspaceStats,
   listListeningPorts,
+  getContainerLogs,
 } from './lib/dockerctl.js';
 import {
   listUsers,
@@ -33,6 +34,7 @@ import {
   renderLogs,
   renderAdminUsers,
   renderAdminPorts,
+  renderAdminUserLogs,
 } from './views/admin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -209,6 +211,34 @@ app.get('/admin/logs', async (req, reply) => {
     lines = [`(could not read ${logPath}: ${e.message})`];
   }
   reply.type('text/html').send(renderLogs({ user: u.username, lines }));
+});
+
+// Per-user container logs — Docker stdout/stderr for ws-<target>.
+app.get('/admin/logs/:user', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const target = (req.params as { user: string }).user;
+  if (!USERNAME_RE.test(target)) {
+    reply.code(400).type('text/plain').send('Invalid username.');
+    return;
+  }
+  const tailRaw = (req.query as { tail?: string }).tail;
+  const tailLines = Math.min(Math.max(parseInt(tailRaw ?? '', 10) || 500, 50), 5000);
+  const [workspace, logs] = await Promise.all([
+    getWorkspace(target),
+    getContainerLogs(target, { tailLines }).catch(
+      (e: any) => `(failed to read container logs: ${e.message ?? e})`,
+    ),
+  ]);
+  reply.type('text/html').send(
+    renderAdminUserLogs({
+      user: u.username,
+      target,
+      workspace,
+      logs,
+      tailLines,
+    }),
+  );
 });
 
 // ---------------------------------------------------------------------------

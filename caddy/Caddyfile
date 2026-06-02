@@ -85,6 +85,29 @@
 </html>`
 	}
 
+	# ----- ADMIN: cross-user terminal (admin-only) --------------------------
+	# /admin/term/<target>/... → ws-<target>:7681 (ttyd).
+	#
+	# This is the deliberate exception to "route by auth, never by URL
+	# slot" (CLAUDE.md convention #1). Admins need shell access into
+	# other workspaces for support/debugging; gating the whole tree on
+	# admin_auth means non-admins can't even attempt cross-user access.
+	# Only ttyd is exposed this way — filebrowser/KasmVNC each bake the
+	# /u/<self>/... prefix into their own served URLs and would need a
+	# bigger refactor to support cross-user access.
+	#
+	# Username regex matches USERNAME_RE in the portal (lib/users.ts) so
+	# malformed slots 404 before reaching reverse_proxy / DNS.
+	handle_path /admin/term/* {
+		import admin_auth
+		@adm_term path_regexp admterm ^/([a-z0-9][a-z0-9_-]{0,30})(/.*)?$
+		handle @adm_term {
+			rewrite * {http.regexp.admterm.2}
+			reverse_proxy ws-{http.regexp.admterm.1}:7681
+		}
+		respond 404
+	}
+
 	# ----- ADMIN: extra-gated, admin-only basicauth -------------------------
 	handle /admin* {
 		import admin_auth

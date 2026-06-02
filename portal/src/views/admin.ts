@@ -39,6 +39,9 @@ export function renderAdmin(args: {
         <td>${cpu}</td>
         <td>${mem}</td>
         <td class="actions">
+          <a class="btn-ghost" href="/admin/logs/${esc(w.user)}" target="_blank" rel="noopener" title="docker logs ws-${esc(w.user)}">Logs</a>
+          <a class="btn-ghost" href="/admin/term/${esc(w.user)}/" target="_blank" rel="noopener"
+             title="Open ttyd inside ws-${esc(w.user)}. Shares the user's PTY — they'll see your input if they're also connected.">Terminal</a>
           <form method="post" action="/admin/workspace/${esc(w.user)}/stop"  style="display:inline"><button>Stop</button></form>
           <form method="post" action="/admin/workspace/${esc(w.user)}/start" style="display:inline"><button>Start</button></form>
           <form method="post" action="/admin/workspace/${esc(w.user)}/destroy" style="display:inline"
@@ -278,4 +281,50 @@ export function renderLogs(args: { user: string; lines: string[] }): string {
   <pre>${esc(args.lines.join('\n'))}</pre>
 </section>`;
   return layout('Admin — Logs', body, { user: args.user, isAdmin: true, active: 'admin' });
+}
+
+// ---------------------------------------------------------------------------
+// Per-user container logs — docker stdout/stderr for ws-<target>
+// ---------------------------------------------------------------------------
+export function renderAdminUserLogs(args: {
+  user: string;
+  target: string;
+  workspace: WorkspaceInfo;
+  logs: string;
+  tailLines: number;
+}): string {
+  const { user, target, workspace, logs, tailLines } = args;
+  const statusBadge = `<span class="badge st-${workspace.status}">${workspace.status}</span>`;
+  const tierBadge = workspace.containerTier
+    ? `<span class="badge st-${workspace.status}">${workspace.containerTier}</span>`
+    : '<span class="muted small">—</span>';
+  const empty =
+    workspace.status === 'absent'
+      ? '<p class="muted">No container exists for this user — nothing to log.</p>'
+      : !logs.trim()
+        ? '<p class="muted">(no log output yet)</p>'
+        : '';
+  const body = `
+<section class="container">
+  <div class="admin-head">
+    <div>
+      <h2>Container logs — <code>${esc(target)}</code></h2>
+      <p class="lead">
+        Last ${tailLines} lines of <code>docker logs ws-${esc(target)}</code>
+        &nbsp;·&nbsp; ${statusBadge} &nbsp;·&nbsp; ${tierBadge}
+      </p>
+    </div>
+    <div>
+      <a class="btn-ghost" href="/admin/logs/${esc(target)}?tail=${tailLines}">Refresh</a>
+      <a class="btn-ghost" href="/admin">← Back to workspaces</a>
+    </div>
+  </div>
+  ${empty}
+  <pre style="max-height:75vh;overflow:auto;">${esc(logs)}</pre>
+</section>`;
+  return layout(
+    `Admin — Logs (${target})`,
+    body,
+    { user, isAdmin: true, active: 'admin' },
+  );
 }

@@ -40,7 +40,8 @@ conventions, and gotchas that aren't obvious from the code.
            ├──→ /u/<slug>/desktop/<…> →  ws-<auth_user>:7683  (KasmVNC + XFCE4 GUI)
            ├──→ /u/<slug>/files/<…>   →  ws-<auth_user>:7682  (filebrowser)
            ├──→ /u/<slug>/p/<port>/<…> →  ws-<auth_user>:<port>  (user webapp)
-           └──→ /u/<slug>/<…>         →  ws-<auth_user>:7681  (ttyd terminal)
+           ├──→ /u/<slug>/<…>         →  ws-<auth_user>:7681  (ttyd terminal)
+           └──→ /admin/term/<target>/<…> → ws-<target>:7681   (admin-only)
 ```
 
 Three running services in compose: `caddy`, `portal`, and a one-shot
@@ -57,6 +58,15 @@ so a compromised workspace can't reach `portal:3000` and forge headers.
    secure than comparing slot to auth (no way to even attempt cross-user
    access) and we proved the alternative — CEL expression matchers and
    placeholder substitution in `path_regexp` patterns — is fragile.
+
+   **Exception**: `/admin/term/<target>/...` (and only that path) routes
+   by URL slot to `ws-<target>:7681` for admin shell access into other
+   workspaces. The whole subtree is gated by `admin_auth` in Caddy so
+   non-admins can't even attempt it. Filebrowser/KasmVNC are NOT
+   admin-accessible cross-user — they bake `/u/<self>/...` into their
+   own served URLs and don't compose with a different prefix. If you
+   need to inspect another user's files, open `/admin/term/<target>/`
+   and use the shell; for graphical desktop access, log in as them.
 
 2. **Workspace ports must bind `0.0.0.0`** to be reachable through the
    proxy. `127.0.0.1` works inside the container but is unreachable from

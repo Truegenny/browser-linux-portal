@@ -348,6 +348,35 @@ function parseSsListenLines(text: string, user: string): ListeningPort[] {
   }).sort((a, b) => a.port - b.port);
 }
 
+// Snapshot of the workspace container's stdout+stderr. Works on stopped
+// containers too (the daemon retains logs until the container is removed).
+// Returns the demuxed text — the Docker daemon multiplexes stdout/stderr
+// into 8-byte-framed chunks because we don't allocate a TTY.
+export async function getContainerLogs(
+  user: string,
+  opts: { tailLines?: number } = {},
+): Promise<string> {
+  const { container: cName } = names(user);
+  const ins = await inspectContainerSafe(cName);
+  if (!ins) return '';
+  const buf: Buffer = await new Promise((resolve, reject) => {
+    docker.getContainer(cName).logs(
+      {
+        stdout: true,
+        stderr: true,
+        tail: opts.tailLines ?? 500,
+        timestamps: true,
+        follow: false,
+      },
+      (err, data) => {
+        if (err) reject(err);
+        else resolve(Buffer.isBuffer(data) ? data : Buffer.from(data ?? ''));
+      },
+    );
+  });
+  return demuxDockerStream(buf);
+}
+
 export async function workspaceStats(
   user: string,
 ): Promise<{ cpuPct: number; memBytes: number; memLimit: number } | null> {
