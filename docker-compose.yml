@@ -1,10 +1,19 @@
 name: browser-linux-portal
 
-# All workspace containers join this external network so Caddy can resolve
-# them by name (ws-<user>). The portal creates them via the Docker socket.
+# Two networks, deliberately separated:
+#   portal-net    — caddy ↔ portal (control plane)
+#   workspace-net — caddy ↔ ws-<user> (data plane)
+#
+# Caddy is the only service on both. The portal is NOT on workspace-net,
+# so a compromised workspace cannot reach portal:3000 and forge the
+# X-Auth-User header. Workspace containers are created by the portal via
+# the Docker socket and attached to workspace-net.
 networks:
   portal-net:
     name: portal-net
+    driver: bridge
+  workspace-net:
+    name: workspace-net
     driver: bridge
 
 volumes:
@@ -34,7 +43,10 @@ services:
       - caddy-config:/config
       - caddy-logs:/var/log/caddy
     networks:
+      # Caddy is the only service on both. It reverse-proxies to portal
+      # on portal-net and to ws-<user> on workspace-net.
       - portal-net
+      - workspace-net
     depends_on:
       - portal
 
@@ -49,7 +61,7 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 3000
       WORKSPACE_IMAGE: ${WORKSPACE_IMAGE:-browser-linux-workspace:latest}
-      WORKSPACE_NETWORK: portal-net
+      WORKSPACE_NETWORK: workspace-net
       WORKSPACE_MEMORY: ${WORKSPACE_MEMORY:-2g}
       WORKSPACE_CPUS: ${WORKSPACE_CPUS:-1.5}
       WORKSPACE_IDLE_HOURS: ${WORKSPACE_IDLE_HOURS:-2}

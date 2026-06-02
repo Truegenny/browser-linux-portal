@@ -3,7 +3,7 @@
 // Naming convention:
 //   container:  ws-<user>
 //   volume:     ws-<user>-home
-//   network:    portal-net  (shared with caddy + portal)
+//   network:    workspace-net  (shared with caddy only; portal is NOT on it)
 //
 // Identity comes from Caddy's X-Auth-User header. The container is the
 // authoritative source of state — we store metadata in container labels

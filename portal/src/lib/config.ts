@@ -21,7 +21,7 @@ export const config = {
   port: envNum('PORT', 3000),
   domain: env('DOMAIN', 'localhost'),
   workspaceImage: env('WORKSPACE_IMAGE', 'browser-linux-workspace:latest'),
-  workspaceNetwork: env('WORKSPACE_NETWORK', 'portal-net'),
+  workspaceNetwork: env('WORKSPACE_NETWORK', 'workspace-net'),
   workspaceMemory: env('WORKSPACE_MEMORY', '2g'),
   workspaceCpus: env('WORKSPACE_CPUS', '1.5'),
   workspaceIdleHours: envNum('WORKSPACE_IDLE_HOURS', 2),

@@ -119,7 +119,7 @@
 		# Desktop (KasmVNC / XFCE4). KasmVNC serves HTTPS only with a
 		# self-signed snakeoil cert; Caddy talks to it as an HTTPS
 		# upstream with tls_insecure_skip_verify (the connection is
-		# inside portal-net, so no real-world MITM risk). We strip the
+		# inside workspace-net, so no real-world MITM risk). We strip the
 		# /<slug>/desktop prefix because KasmVNC's HTML uses relative
 		# URLs and serves at its own root.
 		# Bare /u/<user>/desktop[/] → redirect to index.html with a

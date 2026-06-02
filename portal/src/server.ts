@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs/promises';
 
 import { config } from './lib/config.js';
+import { csrfGuard } from './lib/csrf.js';
 import { getUser, requireUser, requireAdmin } from './lib/auth.js';
 import {
   ensureWorkspace,
@@ -39,6 +40,10 @@ const app = Fastify({
   trustProxy: true, // Caddy is in front
   bodyLimit: 1024 * 1024,
 });
+
+// Reject cross-origin state-changing requests before any body parsing or
+// route handling runs. See lib/csrf.ts for the rationale.
+app.addHook('onRequest', csrfGuard);
 
 // Parse application/x-www-form-urlencoded so plain HTML <form method="post">
 // submissions (Create / Stop / Restart / user-management buttons) don't 415.

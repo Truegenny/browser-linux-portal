@@ -31,20 +31,24 @@ conventions, and gotchas that aren't obvious from the code.
 │  Caddy  │   sets X-Auth-User from auth identity
 └────┬────┘
      │
-     ├──→ /                   public marketing page              (portal)
-     ├──→ /app, /admin, /api  authed dashboard / admin / API     (portal)
-     ├──→ /logout             cache-poison page (no auth)        (Caddy inline)
+     ├── portal-net ────→ portal:3000      (control plane)
+     │     ├──→ /                   public marketing page              (portal)
+     │     ├──→ /app, /admin, /api  authed dashboard / admin / API     (portal)
+     │     └──→ /logout             cache-poison page (no auth)        (Caddy inline)
      │
-     ├──→ /u/<slug>/desktop/<…> →  ws-<auth_user>:7683  (KasmVNC + XFCE4 GUI)
-     ├──→ /u/<slug>/files/<…>   →  ws-<auth_user>:7682  (filebrowser)
-     ├──→ /u/<slug>/p/<port>/<…> →  ws-<auth_user>:<port>  (user webapp)
-     └──→ /u/<slug>/<…>         →  ws-<auth_user>:7681  (ttyd terminal)
+     └── workspace-net ─→ ws-<auth_user>   (data plane; portal NOT on this net)
+           ├──→ /u/<slug>/desktop/<…> →  ws-<auth_user>:7683  (KasmVNC + XFCE4 GUI)
+           ├──→ /u/<slug>/files/<…>   →  ws-<auth_user>:7682  (filebrowser)
+           ├──→ /u/<slug>/p/<port>/<…> →  ws-<auth_user>:<port>  (user webapp)
+           └──→ /u/<slug>/<…>         →  ws-<auth_user>:7681  (ttyd terminal)
 ```
 
 Three running services in compose: `caddy`, `portal`, and a one-shot
 `workspace-image-builder` (builds the per-user image, exits 0). Workspace
 containers (`ws-<user>`) are spawned dynamically by the portal via the
-Docker socket as users sign in.
+Docker socket as users sign in. Caddy is the only service attached to
+both networks; the portal is deliberately isolated from `workspace-net`
+so a compromised workspace can't reach `portal:3000` and forge headers.
 
 ## Critical conventions (don't break these)
 
@@ -60,9 +64,18 @@ Docker socket as users sign in.
    binds explicitly.
 
 3. **Auth contract is `X-Auth-User` header.** Caddy sets it after
-   basic_auth. Portal trusts it because the portal is never published —
-   only Caddy is. Same header set by oauth2-proxy in v1.5; portal code
-   doesn't change.
+   basic_auth. The portal trusts it because (a) the portal is never
+   published — only Caddy is, and (b) workspace containers live on
+   `workspace-net` which the portal is NOT attached to, so they can't
+   reach `portal:3000` to forge it from inside a shell. Same header set
+   by oauth2-proxy in v1.5; portal code doesn't change. **Never attach
+   the portal to `workspace-net`** — that re-opens the bypass.
+
+   Additionally, the portal rejects cross-origin state-changing requests
+   via an `onRequest` hook (`portal/src/lib/csrf.ts`) that checks
+   `Sec-Fetch-Site` + `Origin`. This blocks browser-CSRF; the network
+   split blocks workspace-side curl forgery. Both layers go away in v1.5
+   when oauth2-proxy adds its own session/CSRF handling.
 
 4. **Username regex everywhere:** `^[a-z0-9][a-z0-9_-]{0,30}$`. Defined
    in `portal/src/lib/users.ts` (`USERNAME_RE`). Don't relax; it's
@@ -127,6 +140,15 @@ docker rm -f ws-<user>
 for vol in $(docker volume ls -q --filter name='^ws-.*-home$'); do
   docker run --rm -v "$vol:/data:ro" -v "$PWD/backups:/out" alpine \
     tar czf "/out/${vol}-$(date -u +%F).tgz" -C /data .
+done
+
+# One-time migration to v0.9.18 network split: move any pre-existing
+# workspace containers off portal-net and onto workspace-net. Required
+# only once per host after first deploying v0.9.18+; new workspaces
+# created after the upgrade go straight to workspace-net.
+for c in $(docker ps -aq --filter "name=^ws-"); do
+  docker network connect    workspace-net "$c" 2>/dev/null || true
+  docker network disconnect portal-net    "$c" 2>/dev/null || true
 done
 ```
 
