@@ -1,0 +1,5 @@
+# Users with the desktop GUI enabled. Managed by the portal /admin/users UI.
+# One username per line. Caddy never reads this file — it's portal-side state.
+#
+# A user not in this file is "terminal-only": their workspace gets 2 GB RAM
+# and the KasmVNC/XFCE/Firefox stack is skipped at container start.

@@ -55,6 +55,11 @@ filebrowser \
 # ---------------------------------------------------------------------------
 # KasmVNC (vncserver wrapper) + XFCE4 — desktop stack. Background.
 #
+# Gated on ENABLE_DESKTOP=1 from the portal. Terminal-tier users skip the
+# entire block; the XFCE/Firefox/KasmVNC binaries are still in the image
+# (one image for both tiers) but no X server starts, so RAM usage drops
+# to ~80 MB idle instead of ~250 MB.
+#
 # Use the `vncserver` Perl wrapper rather than direct Xvnc so the HTML5
 # client + httpd configuration come from the package's own logic (rather
 # than us reproducing all of its httpd setup correctly by hand). To skip
@@ -63,9 +68,11 @@ filebrowser \
 # kasmvncpasswd before launching.
 #
 # Per-container env from the portal:
+#   ENABLE_DESKTOP=0|1
 #   VNC_PORT=7683
 #   VNC_RESOLUTION=1280x800
 # ---------------------------------------------------------------------------
+if [[ "${ENABLE_DESKTOP:-0}" == "1" ]]; then
 VNC_PORT="${VNC_PORT:-7683}"
 VNC_RESOLUTION="${VNC_RESOLUTION:-1280x800}"
 
@@ -136,6 +143,10 @@ pkill -x xterm 2>/dev/null || true
   unset DBUS_SESSION_BUS_ADDRESS
   exec dbus-launch --exit-with-session xfce4-session
 ) > /tmp/xfce.log 2>&1 &
+else
+  echo "ENABLE_DESKTOP!=1 — skipping KasmVNC/XFCE startup (terminal tier)." \
+    > /tmp/kasmvnc.log
+fi
 
 # ---------------------------------------------------------------------------
 # ttyd — the in-browser bash terminal. Runs in foreground (tini watches it).

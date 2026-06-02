@@ -110,12 +110,34 @@ scripts/               — add-user.sh, build-workspace-image.sh, idle-stop.sh
 docs/DEPLOY.md         — Ubuntu/Azure deploy runbook (THE authoritative one)
 ```
 
+## User tiers (terminal vs desktop)
+
+Each user is one of two tiers, picked at user creation in `/admin/users`
+and editable per-user from there:
+
+- **terminal** (default) — ttyd + filebrowser only. 2 GB RAM. ~80 MB idle.
+- **desktop** — adds KasmVNC + XFCE4 + Firefox. 3 GB RAM. ~250 MB idle.
+
+The tier is stored in `caddy/desktop.users` (plain list, presence = desktop).
+Caddy doesn't read it — it's portal-side state. The portal sets
+`ENABLE_DESKTOP=0|1` env on the workspace container at create time, and
+`entrypoint.sh` wraps the KasmVNC/XFCE startup in an `if` against it.
+The same workspace image serves both tiers — terminal users just don't
+start the X server.
+
+Tier changes are **lazy**: the running container keeps its current tier
+until the user (or admin) stops + starts it. The portal detects the
+mismatch on the next start and destroys + recreates the container,
+preserving the home volume. The current container's tier is shown in
+`/admin` → Workspaces → Tier column.
+
 ## Key knobs (`.env` → compose env)
 
 - `SITE_ADDRESS` — Caddy site label. `:80` (default) for IP/HTTP-only,
   `box.example.com` for prod with auto-Let's Encrypt.
 - `CADDY_HTTP_PORT` / `CADDY_HTTPS_PORT` — host port mappings
-- `WORKSPACE_MEMORY` / `WORKSPACE_CPUS` / `WORKSPACE_IDLE_HOURS` — per-container limits
+- `WORKSPACE_MEMORY_TERMINAL` (2g) / `WORKSPACE_MEMORY_DESKTOP` (3g) — per-tier RAM caps
+- `WORKSPACE_CPUS` / `WORKSPACE_IDLE_HOURS` — per-container limits
 - `ADMIN_USERS` — bootstrap admin allowlist (file `admins.users` is the runtime source of truth)
 
 ## Common commands (inside the project root)
@@ -150,6 +172,20 @@ for c in $(docker ps -aq --filter "name=^ws-"); do
   docker network connect    workspace-net "$c" 2>/dev/null || true
   docker network disconnect portal-net    "$c" 2>/dev/null || true
 done
+
+# One-time migration to v0.9.19 user tiers: pre-populate caddy/desktop.users
+# with every existing username so current users keep their GUI. New users
+# default to terminal-only; admins can flip them in /admin/users. Run on
+# the host where the repo is checked out (writes ./caddy/desktop.users).
+(
+  echo '# Users with the desktop GUI enabled. Managed by the portal /admin/users UI.'
+  echo '# Pre-populated from existing users.users by v0.9.19 migration.'
+  awk '{print $1}' caddy/users.users | grep -v '^#' | grep -v '^$'
+) > caddy/desktop.users
+# Then force-remove each user's container so the next Start recreates it
+# with the correct ENABLE_DESKTOP env + tier label. The ws-<user>-home
+# volume is preserved by name, so user data survives.
+for c in $(docker ps -aq --filter "name=^ws-"); do docker rm -f "$c"; done
 ```
 
 ## Bugs we hit and how we fixed them (so future you doesn't repeat them)

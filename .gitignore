@@ -12,3 +12,4 @@ portal/public/favicon.ico
 # on each deployment.
 caddy/users.users
 caddy/admins.users
+caddy/desktop.users

@@ -1,16 +1,25 @@
 import { layout, esc } from '../lib/html.js';
 import type { WorkspaceInfo, ListeningPort } from '../lib/dockerctl.js';
+import type { WorkspaceTier } from '../lib/users.js';
 
 export function renderDashboard(args: {
   user: string;
   isAdmin: boolean;
   workspace: WorkspaceInfo;
   listeningPorts: ListeningPort[];
+  tier: WorkspaceTier;
 }): string {
-  const { user, isAdmin, workspace, listeningPorts } = args;
+  const { user, isAdmin, workspace, listeningPorts, tier } = args;
   const status = workspace.status;
+  const desktopEnabled = tier === 'desktop';
 
   const statusBadge = `<span class="badge st-${status}">${status}</span>`;
+  const tierBadge =
+    `<span class="badge st-running" title="${desktopEnabled ? '3 GB RAM' : '2 GB RAM — request the GUI from your admin to upgrade.'}">${tier}</span>`;
+
+  const desktopLink = desktopEnabled
+    ? `<a class="cta secondary" href="/u/${esc(user)}/desktop/" target="_blank" rel="noopener">Open desktop →</a>`
+    : '';
 
   const actions =
     status === 'absent'
@@ -22,7 +31,7 @@ export function renderDashboard(args: {
            <button class="cta">Start workspace</button>
          </form>`
       : `<a class="cta" href="/u/${esc(user)}/" target="_blank" rel="noopener">Open terminal →</a>
-         <a class="cta secondary" href="/u/${esc(user)}/desktop/" target="_blank" rel="noopener">Open desktop →</a>
+         ${desktopLink}
          <a class="cta secondary" href="/u/${esc(user)}/files/" target="_blank" rel="noopener">Open files →</a>
          <form method="post" action="/api/workspace/stop" style="display:inline">
            <button class="cta secondary">Stop</button>
@@ -38,6 +47,7 @@ export function renderDashboard(args: {
       <dt>Image</dt><dd><code>${esc(workspace.image ?? '—')}</code></dd>
       <dt>Created</dt><dd>${esc(workspace.createdAt ?? '—')}</dd>
       <dt>Status</dt><dd>${statusBadge}</dd>
+      <dt>Tier</dt><dd>${tierBadge}</dd>
     </dl>`;
 
   const tip = `

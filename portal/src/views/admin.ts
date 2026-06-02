@@ -1,5 +1,6 @@
 import { layout, esc, bytesHuman } from '../lib/html.js';
 import type { WorkspaceInfo } from '../lib/dockerctl.js';
+import type { WorkspaceTier } from '../lib/users.js';
 
 type AdminSubTab = 'workspaces' | 'users' | 'ports' | 'logs';
 
@@ -26,9 +27,13 @@ export function renderAdmin(args: {
     .map((w) => {
       const cpu = w.stats ? `${w.stats.cpuPct.toFixed(1)}%` : '—';
       const mem = w.stats ? `${bytesHuman(w.stats.memBytes)} / ${bytesHuman(w.stats.memLimit)}` : '—';
+      const tierCell = w.containerTier
+        ? `<span class="badge st-${w.status}">${w.containerTier}</span>`
+        : '<span class="muted small">—</span>';
       return `<tr>
         <td><code>${esc(w.user)}</code></td>
         <td><span class="badge st-${w.status}">${w.status}</span></td>
+        <td>${tierCell}</td>
         <td>${esc(w.image ?? '—')}</td>
         <td>${esc(w.createdAt ?? '—')}</td>
         <td>${cpu}</td>
@@ -49,7 +54,7 @@ export function renderAdmin(args: {
     .join('');
 
   const empty = workspaces.length === 0
-    ? `<tr><td colspan="7" class="muted">No workspaces yet. They appear after a user signs in and clicks Create.</td></tr>`
+    ? `<tr><td colspan="8" class="muted">No workspaces yet. They appear after a user signs in and clicks Create.</td></tr>`
     : '';
 
   const body = `
@@ -64,7 +69,7 @@ export function renderAdmin(args: {
   ${adminSubnav('workspaces')}
   <table class="admin">
     <thead>
-      <tr><th>User</th><th>Status</th><th>Image</th><th>Created</th><th>CPU</th><th>Mem</th><th>Actions</th></tr>
+      <tr><th>User</th><th>Status</th><th>Tier</th><th>Image</th><th>Created</th><th>CPU</th><th>Mem</th><th>Actions</th></tr>
     </thead>
     <tbody>${rows}${empty}</tbody>
   </table>
@@ -77,7 +82,7 @@ export function renderAdmin(args: {
 // ---------------------------------------------------------------------------
 export function renderAdminUsers(args: {
   user: string;
-  users: { username: string; isAdmin: boolean }[];
+  users: { username: string; isAdmin: boolean; tier: WorkspaceTier }[];
   message: string | null;
   error: string | null;
 }): string {
@@ -88,6 +93,20 @@ export function renderAdminUsers(args: {
     const adminBadge = u.isAdmin
       ? '<span class="role">admin</span>'
       : '<span class="muted small">—</span>';
+
+    const tierBadge =
+      u.tier === 'desktop'
+        ? '<span class="role" title="GUI enabled — 3 GB RAM">desktop</span>'
+        : '<span class="muted small" title="ttyd + files only — 2 GB RAM">terminal</span>';
+
+    const desktopToggle =
+      u.tier === 'desktop'
+        ? `<form method="post" action="/admin/users/${esc(u.username)}/disable-desktop" style="display:inline">
+             <button title="Drop to terminal-only on next workspace restart.">Disable desktop</button>
+           </form>`
+        : `<form method="post" action="/admin/users/${esc(u.username)}/enable-desktop" style="display:inline">
+             <button title="Enable GUI on next workspace restart.">Enable desktop</button>
+           </form>`;
 
     const demoteAttr = isSelf
       ? 'disabled title="You cannot demote yourself."'
@@ -113,12 +132,13 @@ export function renderAdminUsers(args: {
     return `<tr>
       <td><code>${esc(u.username)}</code>${isSelf ? ' <span class="small muted">(you)</span>' : ''}</td>
       <td>${adminBadge}</td>
-      <td class="actions">${promoteOrDemote} ${deleteForm}</td>
+      <td>${tierBadge}</td>
+      <td class="actions">${desktopToggle} ${promoteOrDemote} ${deleteForm}</td>
     </tr>`;
   }).join('');
 
   const emptyRow = users.length === 0
-    ? `<tr><td colspan="3" class="muted">No users yet. Add one below.</td></tr>`
+    ? `<tr><td colspan="4" class="muted">No users yet. Add one below.</td></tr>`
     : '';
 
   const banner = error
@@ -135,13 +155,14 @@ export function renderAdminUsers(args: {
   ${banner}
 
   <h3 style="margin-top:24px">Existing users</h3>
+  <p class="muted small">Tier changes take effect on the next workspace restart — running containers keep their current tier until stopped and started again.</p>
   <table class="admin">
-    <thead><tr><th>Username</th><th>Role</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Username</th><th>Role</th><th>Tier</th><th>Actions</th></tr></thead>
     <tbody>${rows}${emptyRow}</tbody>
   </table>
 
   <h3 style="margin-top:32px">Add or reset a user</h3>
-  <p class="muted small">If the username already exists, the password is reset.</p>
+  <p class="muted small">If the username already exists, the password is reset. The admin and desktop checkboxes set the user's current state; leaving them unchecked drops the user back to non-admin / terminal-only.</p>
   <form method="post" action="/admin/users/add" class="user-form">
     <label>
       <span>Username</span>
@@ -156,6 +177,10 @@ export function renderAdminUsers(args: {
     <label class="checkbox">
       <input name="is_admin" type="checkbox">
       <span>grant admin role</span>
+    </label>
+    <label class="checkbox">
+      <input name="enable_desktop" type="checkbox">
+      <span>enable desktop GUI (3 GB RAM instead of 2 GB)</span>
     </label>
     <button class="cta">Save user</button>
   </form>

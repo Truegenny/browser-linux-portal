@@ -21,6 +21,8 @@ import {
   listUsers,
   addOrUpdateUser,
   setAdmin,
+  setUserTier,
+  getUserTier,
   deleteUser,
   USERNAME_RE,
 } from './lib/users.js';
@@ -79,7 +81,10 @@ app.get('/robots.txt', async (_req, reply) => {
 app.get('/app', async (req, reply) => {
   const u = await requireUser(req, reply);
   if (!u) return;
-  const ws = await getWorkspace(u.username);
+  const [ws, tier] = await Promise.all([
+    getWorkspace(u.username),
+    getUserTier(u.username),
+  ]);
   const listeningPorts =
     ws.status === 'running'
       ? await listListeningPorts(u.username).catch(() => [])
@@ -90,6 +95,7 @@ app.get('/app', async (req, reply) => {
       isAdmin: u.isAdmin,
       workspace: ws,
       listeningPorts,
+      tier,
     }),
   );
 });
@@ -100,7 +106,8 @@ app.get('/app', async (req, reply) => {
 app.post('/api/workspace/start', async (req, reply) => {
   const u = await requireUser(req, reply);
   if (!u) return;
-  await ensureWorkspace(u.username);
+  const tier = await getUserTier(u.username);
+  await ensureWorkspace(u.username, { tier });
   reply.redirect('/app');
 });
 
@@ -114,8 +121,9 @@ app.post('/api/workspace/stop', async (req, reply) => {
 app.post('/api/workspace/restart', async (req, reply) => {
   const u = await requireUser(req, reply);
   if (!u) return;
+  const tier = await getUserTier(u.username);
   await stopWorkspace(u.username);
-  await ensureWorkspace(u.username);
+  await ensureWorkspace(u.username, { tier });
   reply.redirect('/app');
 });
 
@@ -143,7 +151,8 @@ app.post('/admin/workspace/:user/start', async (req, reply) => {
   const u = await requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { user: string }).user;
-  await ensureWorkspace(target);
+  const tier = await getUserTier(target);
+  await ensureWorkspace(target, { tier });
   reply.redirect('/admin');
 });
 
@@ -221,10 +230,12 @@ app.post('/admin/users/add', async (req, reply) => {
     username?: string;
     password?: string;
     is_admin?: string;
+    enable_desktop?: string;
   };
   const username = (body.username ?? '').trim().toLowerCase();
   const password = body.password ?? '';
   const wantAdmin = body.is_admin === 'on';
+  const wantDesktop = body.enable_desktop === 'on';
 
   let error: string | null = null;
   if (!USERNAME_RE.test(username)) error = `Invalid username "${username}".`;
@@ -239,7 +250,12 @@ app.post('/admin/users/add', async (req, reply) => {
   }
 
   try {
-    await addOrUpdateUser(username, password, wantAdmin);
+    await addOrUpdateUser(
+      username,
+      password,
+      wantAdmin,
+      wantDesktop ? 'desktop' : 'terminal',
+    );
   } catch (e: any) {
     const users = await listUsers();
     reply.type('text/html').send(
@@ -252,6 +268,22 @@ app.post('/admin/users/add', async (req, reply) => {
     );
     return;
   }
+  reply.redirect('/admin/users');
+});
+
+app.post('/admin/users/:target/enable-desktop', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const target = (req.params as { target: string }).target;
+  await setUserTier(target, 'desktop');
+  reply.redirect('/admin/users');
+});
+
+app.post('/admin/users/:target/disable-desktop', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const target = (req.params as { target: string }).target;
+  await setUserTier(target, 'terminal');
   reply.redirect('/admin/users');
 });
 

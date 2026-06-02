@@ -1,13 +1,16 @@
 // User management for HTTP basic auth.
 //
 // Reads/writes the same files scripts/add-user.sh manages:
-//   /caddy/users.users   — every user, one line: "<username> <bcrypt-hash>"
-//   /caddy/admins.users  — admin subset, same format
+//   /caddy/users.users    — every user, one line: "<username> <bcrypt-hash>"
+//   /caddy/admins.users   — admin subset, same format
+//   /caddy/desktop.users  — users with the desktop GUI enabled,
+//                           plain list (one username per line). Read only
+//                           by the portal — Caddy never sees this file.
 //
 // Caddy bind-mounts these read-only at /etc/caddy/users.users; the portal
 // bind-mounts the parent directory at /caddy:rw so it can edit. After any
-// write, we ask Caddy (via Docker exec) to reload the config so the new
-// state is live without a restart.
+// write to users.users or admins.users we ask Caddy (via Docker exec) to
+// reload its config so the new state is live without a restart.
 //
 // All of this disappears in v1.5 when oauth2-proxy + Entra ID takes over.
 
@@ -19,6 +22,9 @@ import Docker from 'dockerode';
 const CADDY_DIR = '/caddy';
 const USERS_FILE = path.join(CADDY_DIR, 'users.users');
 const ADMINS_FILE = path.join(CADDY_DIR, 'admins.users');
+const DESKTOP_FILE = path.join(CADDY_DIR, 'desktop.users');
+
+export type WorkspaceTier = 'terminal' | 'desktop';
 
 const docker = new Docker();
 
@@ -68,17 +74,53 @@ async function writeFile(file: string, records: UserRecord[]): Promise<void> {
   await fs.writeFile(file, header + body + '\n', 'utf8');
 }
 
+// Plain one-username-per-line file (desktop.users). Caddy doesn't read it,
+// so no bcrypt hash — just the list of users with the GUI enabled.
+async function readPlainList(file: string): Promise<string[]> {
+  let content: string;
+  try {
+    content = await fs.readFile(file, 'utf8');
+  } catch (e: any) {
+    if (e.code === 'ENOENT') return [];
+    throw e;
+  }
+  const out: string[] = [];
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    out.push(line);
+  }
+  return out;
+}
+
+async function writePlainList(file: string, names: string[]): Promise<void> {
+  const header =
+    '# Users with the desktop GUI enabled. Managed by the portal /admin/users UI.\n' +
+    '# One username per line. Caddy never reads this file.\n';
+  const body = Array.from(new Set(names))
+    .sort((a, b) => a.localeCompare(b))
+    .join('\n');
+  await fs.writeFile(file, header + body + '\n', 'utf8');
+}
+
 export async function listUsers(): Promise<{
   username: string;
   isAdmin: boolean;
+  tier: WorkspaceTier;
 }[]> {
-  const [users, admins] = await Promise.all([
+  const [users, admins, desktop] = await Promise.all([
     readFile(USERS_FILE),
     readFile(ADMINS_FILE),
+    readPlainList(DESKTOP_FILE),
   ]);
   const adminSet = new Set(admins.map((a) => a.username));
+  const desktopSet = new Set(desktop);
   return users
-    .map((u) => ({ username: u.username, isAdmin: adminSet.has(u.username) }))
+    .map((u) => ({
+      username: u.username,
+      isAdmin: adminSet.has(u.username),
+      tier: (desktopSet.has(u.username) ? 'desktop' : 'terminal') as WorkspaceTier,
+    }))
     .sort((a, b) => a.username.localeCompare(b.username));
 }
 
@@ -87,10 +129,28 @@ export async function isAdminFromFile(username: string): Promise<boolean> {
   return admins.some((a) => a.username === username);
 }
 
+export async function getUserTier(username: string): Promise<WorkspaceTier> {
+  const desktop = await readPlainList(DESKTOP_FILE);
+  return desktop.includes(username) ? 'desktop' : 'terminal';
+}
+
+export async function setUserTier(
+  username: string,
+  tier: WorkspaceTier,
+): Promise<void> {
+  if (!isValidUsername(username)) throw new Error('Invalid username');
+  const desktop = await readPlainList(DESKTOP_FILE);
+  const filtered = desktop.filter((u) => u !== username);
+  if (tier === 'desktop') filtered.push(username);
+  await writePlainList(DESKTOP_FILE, filtered);
+  // No Caddy reload — Caddy doesn't read desktop.users.
+}
+
 export async function addOrUpdateUser(
   username: string,
   password: string,
   isAdmin: boolean,
+  tier: WorkspaceTier,
 ): Promise<void> {
   if (!isValidUsername(username)) throw new Error('Invalid username');
   if (password.length < 8) throw new Error('Password must be at least 8 characters');
@@ -99,9 +159,10 @@ export async function addOrUpdateUser(
   // VM — fine for a rare admin action.
   const hash = await bcrypt.hash(password, 14);
 
-  const [users, admins] = await Promise.all([
+  const [users, admins, desktop] = await Promise.all([
     readFile(USERS_FILE),
     readFile(ADMINS_FILE),
+    readPlainList(DESKTOP_FILE),
   ]);
 
   const upsert = (list: UserRecord[]): UserRecord[] => {
@@ -116,6 +177,10 @@ export async function addOrUpdateUser(
   } else {
     await writeFile(ADMINS_FILE, admins.filter((a) => a.username !== username));
   }
+
+  const desktopFiltered = desktop.filter((u) => u !== username);
+  if (tier === 'desktop') desktopFiltered.push(username);
+  await writePlainList(DESKTOP_FILE, desktopFiltered);
 
   await reloadCaddy();
 }
@@ -140,12 +205,14 @@ export async function setAdmin(username: string, isAdmin: boolean): Promise<void
 
 export async function deleteUser(username: string): Promise<void> {
   if (!isValidUsername(username)) throw new Error('Invalid username');
-  const [users, admins] = await Promise.all([
+  const [users, admins, desktop] = await Promise.all([
     readFile(USERS_FILE),
     readFile(ADMINS_FILE),
+    readPlainList(DESKTOP_FILE),
   ]);
   await writeFile(USERS_FILE, users.filter((u) => u.username !== username));
   await writeFile(ADMINS_FILE, admins.filter((a) => a.username !== username));
+  await writePlainList(DESKTOP_FILE, desktop.filter((u) => u !== username));
   await reloadCaddy();
 }
 

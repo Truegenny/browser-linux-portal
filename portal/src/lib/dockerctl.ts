@@ -11,12 +11,15 @@
 
 import Docker from 'dockerode';
 import { config, parseMemory } from './config.js';
+import type { WorkspaceTier } from './users.js';
 
 const docker = new Docker(); // /var/run/docker.sock
 
 const LABEL_USER = 'ws.user';
 const LABEL_CREATED = 'ws.created_at';
 const LABEL_LAST_SEEN = 'ws.last_seen_at';
+const LABEL_TIER = 'ws.tier';
+const ENV_ENABLE_DESKTOP = 'ENABLE_DESKTOP';
 
 export interface WorkspaceInfo {
   user: string;
@@ -27,6 +30,10 @@ export interface WorkspaceInfo {
   lastSeenAt?: string;
   containerId?: string;
   image?: string;
+  // The tier the container was last (re)created with. Reflects what's
+  // actually running, not necessarily what the admin's current preference
+  // is — that comes from users.getUserTier().
+  containerTier?: WorkspaceTier;
 }
 
 function isValidUser(user: string): boolean {
@@ -85,24 +92,53 @@ export async function getWorkspace(user: string): Promise<WorkspaceInfo> {
     image: ins.Config.Image,
     createdAt: ins.Config.Labels?.[LABEL_CREATED] ?? ins.Created,
     lastSeenAt: ins.Config.Labels?.[LABEL_LAST_SEEN],
+    containerTier: readContainerTier(ins),
   };
 }
 
-export async function ensureWorkspace(user: string): Promise<WorkspaceInfo> {
+function tierEnabledDesktop(tier: WorkspaceTier): string {
+  return tier === 'desktop' ? '1' : '0';
+}
+
+function readContainerTier(ins: Docker.ContainerInspectInfo): WorkspaceTier {
+  // Prefer the label (set at create time), fall back to the env var.
+  const labelTier = ins.Config.Labels?.[LABEL_TIER];
+  if (labelTier === 'desktop' || labelTier === 'terminal') return labelTier;
+  const env = ins.Config.Env ?? [];
+  const found = env.find((e) => e.startsWith(`${ENV_ENABLE_DESKTOP}=`));
+  return found?.endsWith('=1') ? 'desktop' : 'terminal';
+}
+
+export async function ensureWorkspace(
+  user: string,
+  opts: { tier: WorkspaceTier },
+): Promise<WorkspaceInfo> {
   const { container: cName, volume: vName } = names(user);
   await ensureVolume(vName, user);
 
   const existing = await inspectContainerSafe(cName);
-  if (existing && existing.State.Running) {
-    return getWorkspace(user);
-  }
   if (existing) {
-    await docker.getContainer(cName).start();
-    return getWorkspace(user);
+    // Tier mismatch is detected on stopped containers: recreate so the new
+    // tier's memory cap and ENABLE_DESKTOP env take effect. Running
+    // containers are never silently restarted — the admin/user must stop
+    // first, which makes a tier-change-induced reboot an explicit action.
+    if (existing.State.Running) return getWorkspace(user);
+    const currentTier = readContainerTier(existing);
+    if (currentTier === opts.tier) {
+      await docker.getContainer(cName).start();
+      return getWorkspace(user);
+    }
+    // Tier changed while stopped — destroy the container (keep the volume)
+    // and fall through to recreation below.
+    await docker.getContainer(cName).remove({ force: true });
   }
 
   // Create container fresh.
-  const memBytes = parseMemory(config.workspaceMemory);
+  const memSpec =
+    opts.tier === 'desktop'
+      ? config.workspaceMemoryDesktop
+      : config.workspaceMemoryTerminal;
+  const memBytes = parseMemory(memSpec);
   const nanoCpus = Math.floor(Number(config.workspaceCpus) * 1e9);
   const nowIso = new Date().toISOString();
 
@@ -119,11 +155,14 @@ export async function ensureWorkspace(user: string): Promise<WorkspaceInfo> {
       // KasmVNC's subpath (set via ~/.vnc/kasmvnc.yaml in entrypoint.sh).
       // Must match the path Caddy rewrites requests to.
       `VNC_BASEURL=/u/${user}/desktop`,
+      // Tier flag — entrypoint.sh skips KasmVNC + XFCE startup when 0.
+      `${ENV_ENABLE_DESKTOP}=${tierEnabledDesktop(opts.tier)}`,
     ],
     Labels: {
       [LABEL_USER]: user,
       [LABEL_CREATED]: nowIso,
       [LABEL_LAST_SEEN]: nowIso,
+      [LABEL_TIER]: opts.tier,
     },
     HostConfig: {
       RestartPolicy: { Name: 'no' },
@@ -206,6 +245,9 @@ export async function listWorkspaces(): Promise<WorkspaceInfo[]> {
   });
   return containers.map((c) => {
     const user = c.Labels[LABEL_USER] ?? 'unknown';
+    const tierLabel = c.Labels[LABEL_TIER];
+    const containerTier: WorkspaceTier | undefined =
+      tierLabel === 'desktop' || tierLabel === 'terminal' ? tierLabel : undefined;
     return {
       user,
       containerName: c.Names[0]?.replace(/^\//, '') ?? `ws-${user}`,
@@ -215,6 +257,7 @@ export async function listWorkspaces(): Promise<WorkspaceInfo[]> {
       lastSeenAt: c.Labels[LABEL_LAST_SEEN],
       containerId: c.Id,
       image: c.Image,
+      containerTier,
     };
   });
 }
