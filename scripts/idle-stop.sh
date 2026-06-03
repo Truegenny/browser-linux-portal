@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stop workspace containers that have had no Caddy access-log activity in
 # the last $WORKSPACE_IDLE_HOURS hours. Run from cron, e.g.:
-#   */15 * * * *  /opt/browser-linux-portal/scripts/idle-stop.sh
+#   */15 * * * *  /opt/claudelab/scripts/idle-stop.sh
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,7 +15,7 @@ CUTOFF=$(date -u -d "$IDLE_HOURS hours ago" +%s)
 # Caddy access log path (inside the caddy container; readable from the
 # portal container via the shared caddy-logs volume; readable on host via
 # `docker compose exec caddy tail ...` or `docker volume inspect`).
-LOG_VOLUME=$(docker volume inspect browser-linux-portal_caddy-logs -f '{{ .Mountpoint }}')
+LOG_VOLUME=$(docker volume inspect claudelab_caddy-logs -f '{{ .Mountpoint }}')
 LOG_FILE="$LOG_VOLUME/access.log"
 
 if [[ ! -f "$LOG_FILE" ]]; then

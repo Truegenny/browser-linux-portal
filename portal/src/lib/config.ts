@@ -20,7 +20,7 @@ function envNum(name: string, fallback: number): number {
 export const config = {
   port: envNum('PORT', 3000),
   domain: env('DOMAIN', 'localhost'),
-  workspaceImage: env('WORKSPACE_IMAGE', 'browser-linux-workspace:latest'),
+  workspaceImage: env('WORKSPACE_IMAGE', 'claudelab-workspace:latest'),
   workspaceNetwork: env('WORKSPACE_NETWORK', 'workspace-net'),
   // Per-tier memory caps. Terminal-tier users don't run KasmVNC/XFCE/Firefox,
   // so 2g is plenty; desktop users need ~1g extra headroom.

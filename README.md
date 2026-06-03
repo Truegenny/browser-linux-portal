@@ -1,8 +1,14 @@
-# Browser Linux Portal
+# ClaudeLab
 
 Self-hosted dev workspace platform. One Linux VM, Docker, a per-user container
 with `claude` (Claude Code CLI) preinstalled, accessible from any browser via
-xterm.js + ttyd.
+xterm.js + ttyd. Authenticated through Entra ID single sign-on.
+
+> ⚠️ **The body of this README still describes the pre-v1.0 basic-auth
+> scaffold and is out of date.** For production deployment use
+> [docs/DEPLOY.md](docs/DEPLOY.md) and [docs/SSO.md](docs/SSO.md);
+> for the architecture and conventions read [CLAUDE.md](CLAUDE.md).
+> A full README refresh is a TODO.
 
 > **Status:** v0 scaffold. Auth is **HTTP basic auth** today; **Entra ID SSO**
 > is planned for v1.5 (the auth contract — `X-Auth-User` header — is identical
@@ -81,7 +87,7 @@ contents persist in the `ws-admin-home` Docker volume.
 ## Directory layout
 
 ```
-browser-linux-portal/
+claudelab/
 ├── caddy/
 │   ├── Caddyfile             # routing + basicauth gates
 │   ├── users.users           # user→bcrypt-hash entries (managed by add-user.sh)
@@ -151,7 +157,7 @@ docker run --rm -v ws-alice-home:/data -v "$PWD/backups:/out" alpine \
 Schedule via host cron:
 
 ```cron
-*/15 * * * *  /opt/browser-linux-portal/scripts/idle-stop.sh >> /var/log/browser-linux-idle.log 2>&1
+*/15 * * * *  /opt/claudelab/scripts/idle-stop.sh >> /var/log/claudelab-idle.log 2>&1
 ```
 
 The script reads Caddy's JSON access log to determine activity per workspace.
@@ -210,7 +216,7 @@ Portainer is part of your existing workflow.
 
 This repo is set up to be deployed as a **Portainer Stack from Git**. The
 workspace image is built as part of the stack (the `workspace-image` service
-in compose builds `browser-linux-workspace:latest` and then exits — that's
+in compose builds `claudelab-workspace:latest` and then exits — that's
 expected; you'll see one container in "Exited (0)" state).
 
 ### One-time on the Portainer host
@@ -219,7 +225,7 @@ expected; you'll see one container in "Exited (0)" state).
 # Caddy needs to read the bind-mounted users files; create them if absent
 # (the repo provides empty placeholders, but Portainer pulls into a fresh
 # directory).
-sudo mkdir -p /opt/browser-linux-portal/caddy
+sudo mkdir -p /opt/claudelab/caddy
 ```
 
 You only need this if you want to manage user files outside the repo. If
@@ -259,7 +265,7 @@ not the container, so SSH is easier):
 ```bash
 cd /var/lib/docker/volumes/<stack-volume>/...
 # OR, simpler — clone the repo to a known path and run from there:
-git clone https://github.com/Truegenny/browser-linux-portal.git /opt/blp
+git clone https://github.com/Truegenny/browser-linux-portal.git /opt/claudelab
 cd /opt/blp
 ./scripts/add-user.sh admin --admin
 

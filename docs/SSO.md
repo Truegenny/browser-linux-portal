@@ -20,8 +20,8 @@ files are gone.
 ## 1. Pick the FQDN and point DNS at the VM
 
 `SITE_ADDRESS` and the Entra redirect URI must match. Pick once, e.g.
-`workspaces.ntiva.com`. Create a DNS A record pointing at the VM's
-public IP. Wait for propagation (`dig +short workspaces.ntiva.com`
+`claudelab.ntiva.com`. Create a DNS A record pointing at the VM's
+public IP. Wait for propagation (`dig +short claudelab.ntiva.com`
 should return the IP).
 
 You **cannot** complete the Entra app registration until DNS is live —
@@ -32,9 +32,9 @@ hostname.
 
 Entra Admin Center → **App registrations → New registration**.
 
-- **Name**: `Browser Linux Portal` (or whatever)
+- **Name**: `ClaudeLab` (or whatever)
 - **Supported account types**: "Accounts in this organizational directory only" (single tenant)
-- **Redirect URI**: Web → `https://workspaces.ntiva.com/oauth2/callback`
+- **Redirect URI**: Web → `https://claudelab.ntiva.com/oauth2/callback`
 - Click **Register**.
 
 Copy these from the new app's **Overview** page:
@@ -86,7 +86,7 @@ with admin consent. For most setups this is irrelevant — skip it.
 Entra → **Groups → New group**.
 
 - **Group type**: Security
-- **Name**: `Browser Linux — Admins`
+- **Name**: `ClaudeLab — Admins`
 - **Membership type**: Assigned
 - Add yourself (and any other admins) as members.
 - Click **Create**.
@@ -100,7 +100,7 @@ anyone you've ever onboarded to Microsoft 365. Two layers to lock that
 down:
 
 **App-side: require assignment.** App registration → **Manage →
-Enterprise applications → Browser Linux Portal → Properties** → set
+Enterprise applications → ClaudeLab → Properties** → set
 **Assignment required?** to *Yes* → Save. Then **Users and groups** →
 Add the admin group (or a dedicated "Workspace users" group).
 
@@ -137,7 +137,7 @@ config error will fail to start with a clear message.
 
 ## 9. Smoke-test the flow
 
-In a private browser window, visit `https://workspaces.ntiva.com`.
+In a private browser window, visit `https://claudelab.ntiva.com`.
 
 1. Redirected to `login.microsoftonline.com`, sign in.
 2. Land back on `/`. Marketing page renders.

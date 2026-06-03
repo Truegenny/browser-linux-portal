@@ -91,7 +91,7 @@ ${earlyThemeScript}
 </head>
 <body>
 <header class="site">
-  <a class="brand" href="/"><span class="glyph">_$</span> Browser Linux</a>
+  <a class="brand" href="/"><span class="glyph">_$</span> ClaudeLab</a>
   <nav class="tabs">${tabs.join('')}</nav>
   ${who}
   ${themeToggle}
@@ -99,7 +99,7 @@ ${earlyThemeScript}
 ${body}
 <footer class="site">
   <div>
-    Browser Linux — self-hosted dev workspaces.
+    ClaudeLab — self-hosted dev workspaces.
     Built on Caddy + Docker + ttyd + Claude Code.
   </div>
   <div class="version">v${esc(VERSION)}</div>

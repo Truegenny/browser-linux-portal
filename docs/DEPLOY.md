@@ -1,6 +1,6 @@
 # Deploying on a clean Ubuntu VM (Azure)
 
-This is the **recommended** way to run Browser Linux Portal. Direct Docker on
+This is the **recommended** way to run ClaudeLab. Direct Docker on
 a Linux host, no Portainer in between.
 
 Tested on Ubuntu 22.04 and 24.04 LTS, single VM, x86_64.
@@ -72,9 +72,9 @@ Because this repo is private, the VM needs credentials. Easiest is a one-time
 HTTPS clone with your PAT in the URL — Git will discard it after the clone:
 
 ```bash
-sudo mkdir -p /opt/blp
-sudo chown $USER:$USER /opt/blp
-cd /opt/blp
+sudo mkdir -p /opt/claudelab
+sudo chown $USER:$USER /opt/claudelab
+cd /opt/claudelab
 
 # Replace ghp_xxx with your PAT
 git clone https://Truegenny:ghp_xxxxxxxxxxxxxxxxxxxx@github.com/Truegenny/browser-linux-portal.git .
@@ -85,11 +85,11 @@ If you'd rather not embed the token, install `gh` and `gh auth login` once:
 ```bash
 sudo apt-get install -y gh   # may not be in default repos; see https://cli.github.com/
 gh auth login                # follow the browser device-code flow
-gh repo clone Truegenny/browser-linux-portal /opt/blp
-cd /opt/blp
+gh repo clone Truegenny/browser-linux-portal /opt/claudelab
+cd /opt/claudelab
 ```
 
-Either way, you should now have `/opt/blp/docker-compose.yml` and friends.
+Either way, you should now have `/opt/claudelab/docker-compose.yml` and friends.
 
 ---
 
@@ -110,7 +110,7 @@ end-to-end. You'll come back with these values in hand:
 ## 5. Configure environment
 
 ```bash
-cd /opt/blp
+cd /opt/claudelab
 cp .env.example .env
 nano .env
 ```
@@ -118,7 +118,7 @@ nano .env
 Fill in:
 
 ```
-SITE_ADDRESS=workspaces.yourdomain.com
+SITE_ADDRESS=claudelab.ntiva.com
 ACME_EMAIL=you@yourdomain.com
 CADDY_HTTP_PORT=80
 CADDY_HTTPS_PORT=443
@@ -220,16 +220,16 @@ $ claude               # start a chat
 Make Docker Compose start the stack on boot:
 
 ```bash
-sudo tee /etc/systemd/system/browser-linux-portal.service >/dev/null <<'EOF'
+sudo tee /etc/systemd/system/claudelab.service >/dev/null <<'EOF'
 [Unit]
-Description=Browser Linux Portal stack
+Description=ClaudeLab stack
 Requires=docker.service
 After=docker.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/opt/blp
+WorkingDirectory=/opt/claudelab
 ExecStart=/usr/bin/docker compose up -d
 ExecStop=/usr/bin/docker compose down
 
@@ -238,10 +238,10 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now browser-linux-portal
+sudo systemctl enable --now claudelab
 ```
 
-Now `sudo systemctl status browser-linux-portal` shows the stack and it
+Now `sudo systemctl status claudelab` shows the stack and it
 restarts on reboot.
 
 ---
@@ -251,7 +251,7 @@ restarts on reboot.
 Stops user containers idle > `WORKSPACE_IDLE_HOURS` from `.env`:
 
 ```bash
-( crontab -l 2>/dev/null; echo "*/15 * * * * /opt/blp/scripts/idle-stop.sh >> /var/log/browser-linux-idle.log 2>&1" ) | crontab -
+( crontab -l 2>/dev/null; echo "*/15 * * * * /opt/claudelab/scripts/idle-stop.sh >> /var/log/claudelab-idle.log 2>&1" ) | crontab -
 ```
 
 ---
@@ -261,7 +261,7 @@ Stops user containers idle > `WORKSPACE_IDLE_HOURS` from `.env`:
 When you push commits to `main`:
 
 ```bash
-cd /opt/blp
+cd /opt/claudelab
 git pull
 docker compose up -d --build
 ```
@@ -279,11 +279,11 @@ workspace" pulls them onto the new image with their `/home/node` intact.
 User home volumes are named `ws-<user>-home`. Back them up:
 
 ```bash
-mkdir -p /opt/blp/backups
+mkdir -p /opt/claudelab/backups
 for vol in $(docker volume ls -q --filter name='^ws-.*-home$'); do
   docker run --rm \
     -v "$vol:/data:ro" \
-    -v "/opt/blp/backups:/out" \
+    -v "/opt/claudelab/backups:/out" \
     alpine tar czf "/out/${vol}-$(date -u +%F).tgz" -C /data .
 done
 ```
@@ -326,10 +326,10 @@ docker daemon must own it as the docker group).
 ### Resetting everything
 
 ```bash
-cd /opt/blp
+cd /opt/claudelab
 docker compose down -v          # removes containers AND volumes (data loss!)
 docker volume ls -q | grep '^ws-' | xargs -r docker volume rm
-docker rmi browser-linux-workspace:latest 2>/dev/null
+docker rmi claudelab-workspace:latest 2>/dev/null
 docker compose up -d --build
 ```
 

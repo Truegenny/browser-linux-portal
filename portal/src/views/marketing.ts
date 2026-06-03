@@ -31,7 +31,7 @@ export function renderMarketing(opts: { user?: string; isAdmin?: boolean }): str
 <section id="what" class="container">
   <h2>What this is</h2>
   <p>
-    Browser Linux is a small, self-hosted alternative to Coder, Codespaces,
+    ClaudeLab is a small, self-hosted alternative to Coder, Codespaces,
     and Gitpod. One Linux VM, one Docker daemon, a per-user container with
     a persistent home volume — and a browser-based terminal that drops you
     straight into <code>bash</code>, with <code>claude</code> already on
@@ -63,7 +63,7 @@ export function renderMarketing(opts: { user?: string; isAdmin?: boolean }): str
 <section id="vs" class="container">
   <h2>vs Coder / Codespaces / WebVM</h2>
   <table>
-    <thead><tr><th></th><th>Browser Linux</th><th>Coder OSS</th><th>GitHub Codespaces</th><th>WebVM</th></tr></thead>
+    <thead><tr><th></th><th>ClaudeLab</th><th>Coder OSS</th><th>GitHub Codespaces</th><th>WebVM</th></tr></thead>
     <tbody>
       <tr><td>Self-hosted</td>           <td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No (SaaS)</td><td class="yes">Yes</td></tr>
       <tr><td>Real 64-bit Linux</td>     <td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">x86 32-bit (WASM)</td></tr>
@@ -85,5 +85,5 @@ export function renderMarketing(opts: { user?: string; isAdmin?: boolean }): str
 </section>
 
 `;
-  return layout('Browser Linux', body, { ...opts, active: 'home' });
+  return layout('ClaudeLab', body, { ...opts, active: 'home' });
 }

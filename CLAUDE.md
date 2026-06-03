@@ -1,4 +1,8 @@
-# Browser Linux Portal — project context
+# ClaudeLab — project context
+
+(Repo is still named `browser-linux-portal` on GitHub for the moment; the
+product/brand is **ClaudeLab**. Rename the repo when convenient — the URL
+update is a follow-up.)
 
 A self-hosted dev workspace platform. One Linux VM, Docker, a per-user Debian
 container with `claude` (Claude Code CLI), `ttyd` (browser terminal), and
@@ -18,7 +22,8 @@ then `docs/SSO.md` if you're touching anything auth-related.**
 - **Version:** see `portal/package.json` (`v1.0.0`+ at time of writing — first prod release with SSO)
 - **Auth:** Entra ID via oauth2-proxy. Basic-auth is GONE — no more `users.users`/`admins.users`/`add-user.sh`.
 - **Deployment target:** new Azure subscription (TBD), greenfield. The old `ClaudeDocker` VM at 20.125.57.59 is the dev/staging history; production lives elsewhere.
-- **Stack name:** `browser-linux-portal` (compose project)
+- **Stack name:** `claudelab` (compose project)
+- **Production FQDN:** `claudelab.ntiva.com`
 - **Public ports (prod):** 80, 443. TLS via Let's Encrypt against `SITE_ADDRESS`.
 
 ## Architecture
@@ -251,7 +256,7 @@ for c in $(docker ps -aq --filter "name=^ws-"); do docker rm -f "$c"; done
 (bcryptjs was removed in v1.0 — no more local password hashing. Entra
 owns identity now.)
 
-## Workspace image contents (per-user `browser-linux-workspace:latest`)
+## Workspace image contents (per-user `claudelab-workspace:latest`)
 
 - Base: `node:20-bookworm-slim` (Debian 12 + Node 20)
 - Apt: ca-certificates, curl, wget, git, sudo, tini, build-essential,

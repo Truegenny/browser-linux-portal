@@ -10,7 +10,7 @@ if [[ -f "$ROOT/.env" ]]; then
   set -a; . "$ROOT/.env"; set +a
 fi
 
-TAG="${WORKSPACE_IMAGE:-browser-linux-workspace:latest}"
+TAG="${WORKSPACE_IMAGE:-claudelab-workspace:latest}"
 
 echo "Building $TAG ..."
 docker build -t "$TAG" "$ROOT/workspace-image"

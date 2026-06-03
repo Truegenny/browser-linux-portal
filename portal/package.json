@@ -1,6 +1,6 @@
 {
-  "name": "browser-linux-portal",
-  "version": "1.0.0",
+  "name": "claudelab-portal",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "scripts": {

@@ -1,4 +1,4 @@
-name: browser-linux-portal
+name: claudelab
 
 # Two networks, deliberately separated:
 #   portal-net    — caddy ↔ portal (control plane)
@@ -97,7 +97,7 @@ services:
       - portal-net
 
   portal:
-    image: browser-linux-portal-portal:latest
+    image: claudelab-portal:latest
     pull_policy: build
     build:
       context: ./portal
@@ -106,7 +106,7 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 3000
-      WORKSPACE_IMAGE: ${WORKSPACE_IMAGE:-browser-linux-workspace:latest}
+      WORKSPACE_IMAGE: ${WORKSPACE_IMAGE:-claudelab-workspace:latest}
       WORKSPACE_NETWORK: workspace-net
       WORKSPACE_MEMORY_TERMINAL: ${WORKSPACE_MEMORY_TERMINAL:-2g}
       WORKSPACE_MEMORY_DESKTOP: ${WORKSPACE_MEMORY_DESKTOP:-3g}
@@ -135,14 +135,14 @@ services:
   # ---------------------------------------------------------------------
   # This service exists only so the workspace image is built alongside the
   # rest of the stack. On Portainer Stack deploy with "rebuild image and
-  # redeploy", the per-user image (browser-linux-workspace:latest) is built
+  # redeploy", the per-user image (claudelab-workspace:latest) is built
   # automatically. The container itself just prints and exits — it stays
   # in "Exited (0)" state in the stack, which is expected.
   #
   # Manual rebuild after Dockerfile changes:
   #   docker compose build workspace-image
   workspace-image:
-    image: ${WORKSPACE_IMAGE:-browser-linux-workspace:latest}
+    image: ${WORKSPACE_IMAGE:-claudelab-workspace:latest}
     pull_policy: build
     build:
       context: ./workspace-image

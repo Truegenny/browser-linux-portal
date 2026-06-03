@@ -144,7 +144,7 @@ RUN set -eux; \
 # Branding flags are best-effort — tolerate the failure so a renamed flag
 # in a future filebrowser release doesn't break the whole build.
 RUN set -eux; \
-    filebrowser config set --branding.name="Browser Linux Files" --database "$FB_DB" || \
+    filebrowser config set --branding.name="ClaudeLab Files" --database "$FB_DB" || \
       echo "WARN: --branding.name not accepted by this filebrowser version"; \
     filebrowser config set --branding.disableExternal=true --database "$FB_DB" || \
       echo "WARN: --branding.disableExternal not accepted by this filebrowser version"; \
