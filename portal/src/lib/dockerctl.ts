@@ -11,7 +11,7 @@
 
 import Docker from 'dockerode';
 import { config, parseMemory } from './config.js';
-import type { WorkspaceTier } from './users.js';
+import { USERNAME_RE, type WorkspaceTier } from './users.js';
 
 const docker = new Docker(); // /var/run/docker.sock
 
@@ -36,12 +36,11 @@ export interface WorkspaceInfo {
   containerTier?: WorkspaceTier;
 }
 
-function isValidUser(user: string): boolean {
-  return /^[a-z0-9][a-z0-9_-]{0,30}$/.test(user);
-}
-
 function names(user: string) {
-  if (!isValidUser(user)) throw new Error(`Invalid username: ${user}`);
+  // Single source of truth lives in lib/users.ts so the slug regex stays
+  // in sync across the portal, Caddyfile (header_regexp), and any future
+  // consumer.
+  if (!USERNAME_RE.test(user)) throw new Error(`Invalid username: ${user}`);
   return {
     container: `ws-${user}`,
     volume: `ws-${user}-home`,
