@@ -79,7 +79,11 @@ services:
       - --cookie-domain=${SITE_ADDRESS}
       - --cookie-samesite=lax
       - --cookie-expire=8h
-      - --email-domains=${OAUTH2_PROXY_EMAIL_DOMAINS:-*}
+      # Singular flag name despite the plural env-var spelling — confusing
+      # but that's what oauth2-proxy v7 ships with. Comma-separated lists
+      # only work via the env var; on the CLI, pass --email-domain multiple
+      # times if you ever need more than one domain.
+      - --email-domain=${OAUTH2_PROXY_EMAIL_DOMAINS:-*}
       - --redirect-url=https://${SITE_ADDRESS}/oauth2/callback
       - --reverse-proxy=true
       - --whitelist-domain=${SITE_ADDRESS}
