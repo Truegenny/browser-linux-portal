@@ -111,12 +111,14 @@
 	# just with the email header instead of basic_auth's user.id.
 	#
 	# All four service handlers below depend on the `@have_slug` matcher
-	# populating {http.regexp.slug.1} from X-Auth-Request-Email. If the
-	# header is missing or malformed, the whole /u/* tree 502s rather
-	# than potentially routing to ws-<empty>:port.
-	@have_slug header_regexp slug X-Auth-Request-Email ^([a-z0-9][a-z0-9._-]{0,40})@
-
+	# populating {http.regexp.slug.1} from X-Auth-Request-Email. The
+	# matcher is defined *inside* the handle_path block so its captures
+	# are guaranteed to be in scope for the nested handlers — defining it
+	# at site level caused Caddy to fail to populate {http.regexp.slug.1}
+	# on first prod deploy. If the header is missing or malformed, the
+	# whole /u/* tree 502s rather than potentially routing to ws-<empty>.
 	handle_path /u/* {
+		@have_slug header_regexp slug X-Auth-Request-Email ^([a-z0-9][a-z0-9._-]{0,40})@
 		handle @have_slug {
 			# Desktop (KasmVNC HTTPS upstream, snakeoil cert).
 			@desktop_root path_regexp dskroot ^/[^/]+/desktop/?$
