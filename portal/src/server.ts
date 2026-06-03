@@ -24,7 +24,7 @@ import {
   listDesktopUsers,
   USERNAME_RE,
 } from './lib/users.js';
-import { renderMarketing } from './views/marketing.js';
+import { renderMarketing, renderSignedOut } from './views/marketing.js';
 import { renderDashboard } from './views/dashboard.js';
 import {
   renderAdmin,
@@ -69,6 +69,13 @@ app.get('/', async (req, reply) => {
 
 app.get('/favicon.ico', async (_req, reply) => {
   reply.code(204).send();
+});
+
+// Post-sign-out landing page. Caddy excludes this path from forward_auth so
+// the user doesn't get silently re-authenticated the moment the cookie is
+// cleared. See views/marketing.ts::renderSignedOut for the rationale.
+app.get('/signed-out', async (_req, reply) => {
+  reply.type('text/html').send(renderSignedOut());
 });
 
 app.get('/robots.txt', async (_req, reply) => {

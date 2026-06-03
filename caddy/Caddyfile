@@ -49,7 +49,10 @@
 	# slot). Without the @protected matcher, the OIDC callback itself
 	# would be intercepted by forward_auth and bounced to /oauth2/start
 	# in a loop.
-	@protected not path /oauth2/*
+	# /signed-out is a public landing page shown after sign-out. Excluded
+	# from forward_auth so the user doesn't get silently re-authenticated
+	# the instant the cookie is cleared.
+	@protected not path /oauth2/* /signed-out
 	forward_auth @protected oauth2-proxy:4180 {
 		uri /oauth2/auth
 		copy_headers X-Auth-Request-Email X-Auth-Request-User X-Auth-Request-Groups X-Auth-Request-Preferred-Username

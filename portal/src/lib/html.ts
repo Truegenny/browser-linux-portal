@@ -37,7 +37,7 @@ export function layout(
   const who = opts.user
     ? `<span class="who">
          ${esc(opts.user)}${opts.isAdmin ? ' <span class="role">admin</span>' : ''}
-         <a class="signout" href="/oauth2/sign_out?rd=/" title="Sign out">Sign out</a>
+         <a class="signout" href="/oauth2/sign_out?rd=/signed-out" title="Sign out">Sign out</a>
        </span>`
     : '';
 

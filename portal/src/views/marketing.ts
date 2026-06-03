@@ -87,3 +87,28 @@ export function renderMarketing(opts: { user?: string; isAdmin?: boolean }): str
 `;
   return layout('ClaudeLab', body, { ...opts, active: 'home' });
 }
+
+// Post-sign-out landing page. Reached only via /oauth2/sign_out?rd=/signed-out,
+// so by the time the browser arrives here the oauth2-proxy session cookie has
+// already been cleared. Crucially, this path is excluded from forward_auth in
+// the Caddyfile — otherwise the user would be silently re-authenticated via
+// Entra's still-active SSO session, defeating the sign-out entirely.
+export function renderSignedOut(): string {
+  const body = `
+<section class="container" style="text-align:center;padding:80px 24px;max-width:560px;">
+  <h2>Signed out</h2>
+  <p class="lead">Your ClaudeLab session has been cleared.</p>
+  <p class="muted small" style="margin-top:18px;">
+    Your Microsoft 365 sign-in is still active in this browser, so clicking
+    <strong>Sign in</strong> below will return you without prompting.
+    To fully sign out of Microsoft 365 (Teams, Outlook, everything else), use
+    <a href="https://login.microsoftonline.com/common/oauth2/v2.0/logout" target="_blank" rel="noopener">Microsoft's global sign-out</a>
+    or close this browser.
+  </p>
+  <p style="margin-top:32px;">
+    <a class="cta" href="/app">Sign in →</a>
+    <a class="cta secondary" href="/">Home</a>
+  </p>
+</section>`;
+  return layout('Signed out — ClaudeLab', body, { active: 'home' });
+}

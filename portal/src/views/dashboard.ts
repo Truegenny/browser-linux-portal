@@ -183,7 +183,7 @@ cross-user access is impossible.
   const body = `
 <section class="container">
   <h2>Hello, ${esc(user)}.</h2>
-  <p class="lead">Your personal Linux workspace. Signed in as <code>${esc(email)}</code> · <a href="/oauth2/sign_out?rd=/">sign out</a></p>
+  <p class="lead">Your personal Linux workspace. Signed in as <code>${esc(email)}</code> · <a href="/oauth2/sign_out?rd=/signed-out">sign out</a></p>
   <div class="dashboard-grid">
     <div class="dashboard-main">
       <div class="card">
