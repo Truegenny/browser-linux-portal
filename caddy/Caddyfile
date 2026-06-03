@@ -118,7 +118,12 @@
 	# on first prod deploy. If the header is missing or malformed, the
 	# whole /u/* tree 502s rather than potentially routing to ws-<empty>.
 	handle_path /u/* {
-		@have_slug header_regexp slug X-Auth-Request-Email ^([a-z0-9][a-z0-9._-]{0,40})@
+		# Case-insensitive — Entra preserves UPN case (e.g. Justin.Cronin),
+		# so the email header arrives mixed-case. The captured slug stays
+		# in its original case, but Docker's embedded DNS lookup for
+		# ws-<slug> is case-insensitive so it resolves to the container
+		# the portal created with its lowercase name.
+		@have_slug header_regexp slug X-Auth-Request-Email (?i)^([a-z0-9][a-z0-9._-]{0,40})@
 		handle @have_slug {
 			# Desktop (KasmVNC HTTPS upstream, snakeoil cert).
 			@desktop_root path_regexp dskroot ^/[^/]+/desktop/?$
