@@ -34,9 +34,6 @@ services:
       # SITE_ADDRESS="box.example.com" → auto-HTTPS via Let's Encrypt.
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
       ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
-      # Used by the Caddyfile to gate /admin/term/<target>/* and similar
-      # admin-only paths on the Entra group OID forwarded by oauth2-proxy.
-      ADMIN_GROUP_OID: ${ADMIN_GROUP_OID}
     volumes:
       # Bind-mount the whole caddy/ directory (not individual files) — this
       # avoids Docker auto-creating empty directories when a single-file

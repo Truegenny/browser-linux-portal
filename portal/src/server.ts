@@ -22,6 +22,8 @@ import {
   setUserTier,
   getUserTier,
   listDesktopUsers,
+  listExtraAdminEmails,
+  setExtraAdmin,
   USERNAME_RE,
 } from './lib/users.js';
 import { renderMarketing, renderSignedOut } from './views/marketing.js';
@@ -61,7 +63,7 @@ await app.register(fastifyStatic, {
 // anyone reaching it is already authenticated)
 // ---------------------------------------------------------------------------
 app.get('/', async (req, reply) => {
-  const u = getUser(req);
+  const u = await getUser(req);
   reply.type('text/html').send(
     renderMarketing({ user: u?.username, isAdmin: u?.isAdmin }),
   );
@@ -86,7 +88,7 @@ app.get('/robots.txt', async (_req, reply) => {
 // Authenticated dashboard
 // ---------------------------------------------------------------------------
 app.get('/app', async (req, reply) => {
-  const u = requireUser(req, reply);
+  const u = await requireUser(req, reply);
   if (!u) return;
   const [ws, tier] = await Promise.all([
     getWorkspace(u.username),
@@ -112,7 +114,7 @@ app.get('/app', async (req, reply) => {
 // Workspace lifecycle (POST + redirect, plain-form-friendly)
 // ---------------------------------------------------------------------------
 app.post('/api/workspace/start', async (req, reply) => {
-  const u = requireUser(req, reply);
+  const u = await requireUser(req, reply);
   if (!u) return;
   const tier = await getUserTier(u.username);
   await ensureWorkspace(u.username, { tier });
@@ -120,14 +122,14 @@ app.post('/api/workspace/start', async (req, reply) => {
 });
 
 app.post('/api/workspace/stop', async (req, reply) => {
-  const u = requireUser(req, reply);
+  const u = await requireUser(req, reply);
   if (!u) return;
   await stopWorkspace(u.username);
   reply.redirect('/app');
 });
 
 app.post('/api/workspace/restart', async (req, reply) => {
-  const u = requireUser(req, reply);
+  const u = await requireUser(req, reply);
   if (!u) return;
   const tier = await getUserTier(u.username);
   await stopWorkspace(u.username);
@@ -139,7 +141,7 @@ app.post('/api/workspace/restart', async (req, reply) => {
 // Admin — workspaces
 // ---------------------------------------------------------------------------
 app.get('/admin', async (req, reply) => {
-  const u = requireAdmin(req, reply);
+  const u = await requireAdmin(req, reply);
   if (!u) return;
   const workspaces = await listWorkspaces();
   // Pull stats in parallel; tolerate failures.
@@ -156,7 +158,7 @@ app.get('/admin', async (req, reply) => {
 });
 
 app.post('/admin/workspace/:user/start', async (req, reply) => {
-  const u = requireAdmin(req, reply);
+  const u = await requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { user: string }).user;
   if (!USERNAME_RE.test(target)) {
@@ -169,7 +171,7 @@ app.post('/admin/workspace/:user/start', async (req, reply) => {
 });
 
 app.post('/admin/workspace/:user/stop', async (req, reply) => {
-  const u = requireAdmin(req, reply);
+  const u = await requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { user: string }).user;
   if (!USERNAME_RE.test(target)) {
@@ -181,7 +183,7 @@ app.post('/admin/workspace/:user/stop', async (req, reply) => {
 });
 
 app.post('/admin/workspace/:user/destroy', async (req, reply) => {
-  const u = requireAdmin(req, reply);
+  const u = await requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { user: string }).user;
   if (!USERNAME_RE.test(target)) {
@@ -195,7 +197,7 @@ app.post('/admin/workspace/:user/destroy', async (req, reply) => {
 });
 
 app.get('/admin/ports', async (req, reply) => {
-  const u = requireAdmin(req, reply);
+  const u = await requireAdmin(req, reply);
   if (!u) return;
   const workspaces = await listWorkspaces();
   const running = workspaces.filter((w) => w.status === 'running');
@@ -215,7 +217,7 @@ app.get('/admin/ports', async (req, reply) => {
 });
 
 app.get('/admin/logs', async (req, reply) => {
-  const u = requireAdmin(req, reply);
+  const u = await requireAdmin(req, reply);
   if (!u) return;
   const logPath = '/var/log/caddy/access.log';
   let lines: string[] = [];
@@ -230,7 +232,7 @@ app.get('/admin/logs', async (req, reply) => {
 
 // Per-user container logs — Docker stdout/stderr for ws-<target>.
 app.get('/admin/logs/:user', async (req, reply) => {
-  const u = requireAdmin(req, reply);
+  const u = await requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { user: string }).user;
   if (!USERNAME_RE.test(target)) {
@@ -265,11 +267,12 @@ app.get('/admin/logs/:user', async (req, reply) => {
 // desktop tier per user. New users appear automatically the first time
 // they sign in and create a workspace.
 app.get('/admin/users', async (req, reply) => {
-  const u = requireAdmin(req, reply);
+  const u = await requireAdmin(req, reply);
   if (!u) return;
-  const [workspaces, desktopUsers] = await Promise.all([
+  const [workspaces, desktopUsers, extraAdmins] = await Promise.all([
     listWorkspaces(),
     listDesktopUsers(),
+    listExtraAdminEmails(),
   ]);
   const set = new Set<string>(workspaces.map((w) => w.user));
   desktopUsers.forEach((d) => set.add(d));
@@ -284,12 +287,18 @@ app.get('/admin/users', async (req, reply) => {
       hasWorkspace: workspaces.some((w) => w.user === username),
     }));
   reply.type('text/html').send(
-    renderAdminUsers({ user: u.username, users }),
+    renderAdminUsers({
+      user: u.username,
+      users,
+      extraAdmins,
+      envAdmins: config.adminUsers,
+      hasAdminGroup: !!config.adminGroupOid,
+    }),
   );
 });
 
 app.post('/admin/users/:target/enable-desktop', async (req, reply) => {
-  const u = requireAdmin(req, reply);
+  const u = await requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { target: string }).target;
   if (!USERNAME_RE.test(target)) {
@@ -301,7 +310,7 @@ app.post('/admin/users/:target/enable-desktop', async (req, reply) => {
 });
 
 app.post('/admin/users/:target/disable-desktop', async (req, reply) => {
-  const u = requireAdmin(req, reply);
+  const u = await requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { target: string }).target;
   if (!USERNAME_RE.test(target)) {
@@ -310,6 +319,66 @@ app.post('/admin/users/:target/disable-desktop', async (req, reply) => {
   }
   await setUserTier(target, 'terminal');
   reply.redirect('/admin/users');
+});
+
+// Promote / demote portal-elected admins. Keyed by email rather than slug
+// because admin status is a property of identity (Entra email), not of the
+// workspace slug — different users can theoretically share a slug if they
+// were ever to live in different tenants.
+app.post('/admin/users/grant-admin', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const body = (req.body ?? {}) as { email?: string };
+  const email = (body.email ?? '').trim().toLowerCase();
+  if (!email || !email.includes('@')) {
+    reply.code(400).type('text/plain').send('Invalid email.');
+    return;
+  }
+  await setExtraAdmin(email, true);
+  reply.redirect('/admin/users');
+});
+
+app.post('/admin/users/revoke-admin', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const body = (req.body ?? {}) as { email?: string };
+  const email = (body.email ?? '').trim().toLowerCase();
+  if (!email) {
+    reply.code(400).type('text/plain').send('Invalid email.');
+    return;
+  }
+  if (email === u.email) {
+    // Allow self-demotion only if another admin source still applies;
+    // otherwise the user would lock themselves out.
+    reply.code(400).type('text/plain').send(
+      "Refusing to revoke your own portal-elected admin status. Demote yourself by removing your entry from caddy/admins.users on the host, or have another admin do it.",
+    );
+    return;
+  }
+  await setExtraAdmin(email, false);
+  reply.redirect('/admin/users');
+});
+
+// ---------------------------------------------------------------------------
+// Internal — admin check endpoint for Caddy's forward_auth subrequest.
+// ---------------------------------------------------------------------------
+// Caddy hits this before proxying /admin/term/<target>/* to the workspace
+// container. We can't gate that at Caddy level by header alone anymore
+// because portal-elected admins live in a file Caddy doesn't read.
+// Returns 200 if the request identity is admin (group OR file OR env),
+// 403 otherwise. Headers come from Caddy via the inner forward_auth's
+// header_up directives.
+app.get('/internal/check-admin', async (req, reply) => {
+  const u = await getUser(req);
+  if (!u) {
+    reply.code(403).type('text/plain').send('not authenticated');
+    return;
+  }
+  if (!u.isAdmin) {
+    reply.code(403).type('text/plain').send('not admin');
+    return;
+  }
+  reply.code(200).type('text/plain').send('admin');
 });
 
 // ---------------------------------------------------------------------------

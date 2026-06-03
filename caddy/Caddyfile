@@ -75,25 +75,42 @@
 		}
 	}
 
-	# ----- ADMIN: cross-user terminal (admin-only) -------------------------
-	# Same as v0.9.20, now gated on Entra group membership instead of
-	# admin_auth basic-auth realm. We check that the user's groups header
-	# (comma-separated GUIDs from Entra) contains the configured admin
-	# group OID.
+	# ----- ADMIN: cross-user terminal + webapp ports (admin-only) ----------
+	# Gated via a forward_auth subrequest to the portal's /internal/check-admin
+	# rather than a Caddy-side group-OID header match. This way "is admin"
+	# is decided in one place (portal's lib/auth.ts unions Entra group OID,
+	# portal-elected admins.users file, and ADMIN_USERS env), and the file-
+	# elected admins also get cross-user access through this path.
 	#
-	# Username regex matches USERNAME_RE in the portal (lib/users.ts) so
-	# malformed slots 404 before reaching reverse_proxy / DNS.
-	@is_admin header X-Auth-Request-Groups *{$ADMIN_GROUP_OID}*
+	# header_up passes the email + groups onto the auth subrequest so the
+	# portal handler reads them the same way it does for the public app.
+	#
+	# Username regex matches USERNAME_RE (case-insensitive — though URLs
+	# come from the dashboard which always renders lowercase) so malformed
+	# slots 404 before reaching reverse_proxy / DNS.
 	handle_path /admin/term/* {
-		handle @is_admin {
-			@adm_term path_regexp admterm ^/([a-z0-9][a-z0-9._-]{0,40})(/.*)?$
-			handle @adm_term {
-				rewrite * {http.regexp.admterm.2}
-				reverse_proxy ws-{http.regexp.admterm.1}:7681
-			}
-			respond 404
+		forward_auth portal:3000 {
+			uri /internal/check-admin
+			header_up X-Auth-User {http.request.header.X-Auth-Request-Email}
+			header_up X-Auth-Groups {http.request.header.X-Auth-Request-Groups}
 		}
-		respond "Admins only" 403
+
+		# Webapp port-proxy: /admin/term/<target>/p/<port>/<rest>
+		# → ws-<target>:<port>/<rest>. Stripped of the /admin/term prefix
+		# by handle_path above.
+		@adm_port path_regexp admport ^/([a-z0-9][a-z0-9._-]{0,40})/p/(\d+)(/.*)?$
+		handle @adm_port {
+			rewrite * {http.regexp.admport.3}
+			reverse_proxy ws-{http.regexp.admport.1}:{http.regexp.admport.2}
+		}
+
+		# Default: terminal (ttyd) at /admin/term/<target>/<rest>.
+		@adm_term path_regexp admterm ^/([a-z0-9][a-z0-9._-]{0,40})(/.*)?$
+		handle @adm_term {
+			rewrite * {http.regexp.admterm.2}
+			reverse_proxy ws-{http.regexp.admterm.1}:7681
+		}
+		respond 404
 	}
 
 	# ----- ADMIN: portal-served dashboard / users / ports / logs ----------

@@ -1,0 +1,8 @@
+# Portal-elected admins. Managed by the /admin/users UI.
+# One email per line. Unioned with ADMIN_GROUP_OID and ADMIN_USERS env —
+# any one of the three signals makes a user admin.
+#
+# Caddy never reads this file. The portal exposes it for cross-user
+# admin actions (workspace lifecycle, terminal, container logs, port
+# proxy) via /internal/check-admin which Caddy hits as a forward_auth
+# subrequest before letting the request reach the workspace container.

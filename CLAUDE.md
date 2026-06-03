@@ -73,14 +73,16 @@ so a compromised workspace can't reach `portal:3000` and forge headers.
    substitution in `path_regexp` patterns — is fragile.
 
    **Exception**: `/admin/term/<target>/...` (and only that path) routes
-   by URL slot to `ws-<target>:7681` for admin shell access into other
-   workspaces. The whole subtree is gated in Caddy by a matcher that
-   checks `X-Auth-Request-Groups` for `{$ADMIN_GROUP_OID}`, so
-   non-admins can't even attempt it. Filebrowser/KasmVNC are NOT
-   admin-accessible cross-user — they bake `/u/<self>/...` into their
-   own served URLs and don't compose with a different prefix. If you
-   need to inspect another user's files, open `/admin/term/<target>/`
-   and use the shell; for graphical desktop access, log in as them.
+   by URL slot to `ws-<target>:7681` (terminal) or `ws-<target>:<port>`
+   (webapps, via `/admin/term/<target>/p/<port>/`). Gated in Caddy by a
+   `forward_auth` subrequest to the portal's `/internal/check-admin`,
+   which unions three signals: Entra group OID, `admins.users` file,
+   and `ADMIN_USERS` env — any one makes the requester admin.
+   Filebrowser/KasmVNC are NOT admin-accessible cross-user — they bake
+   `/u/<self>/...` into their own served URLs and don't compose with a
+   different prefix. If you need to inspect another user's files, open
+   `/admin/term/<target>/` and use the shell (`cat`, `ls`, `tar`,
+   `scp`, etc.); for graphical desktop access, log in as them.
 
 2. **Workspace ports must bind `0.0.0.0`** to be reachable through the
    proxy. `127.0.0.1` works inside the container but is unreachable from
@@ -139,6 +141,27 @@ docs/
   DEPLOY.md            — Ubuntu/Azure deploy runbook (start here)
   SSO.md               — Entra ID app-registration + claims walkthrough
 ```
+
+## Admin status — three sources, unioned
+
+A user is admin if **any** of these is true (checked in `lib/auth.ts`):
+
+1. Their email is listed in the `ADMIN_USERS` env var (bootstrap; survives
+   when Entra/file are unavailable).
+2. Their token's `groups` claim contains the OID configured as
+   `ADMIN_GROUP_OID` (the canonical "real" admin signal — managed in Entra).
+3. Their email is listed in `caddy/admins.users` (portal-elected; managed
+   from the `/admin/users` UI by another admin).
+
+Caddy gates `/admin/term/<target>/*` via a `forward_auth` subrequest to
+the portal's `/internal/check-admin` — which performs exactly the union
+above. This means file-elected admins get full cross-user access too,
+without needing Entra group membership.
+
+`admins.users` is gitignored and lives next to `desktop.users`. Demotion
+of a portal-elected admin takes effect on the next page load. Demotion
+via Entra group only takes effect on token refresh (cookie lifetime is
+8h by default).
 
 ## User tiers (terminal vs desktop)
 

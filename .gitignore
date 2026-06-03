@@ -6,10 +6,10 @@ backups/
 .DS_Store
 portal/public/favicon.ico
 
-# Real basicauth secret files — bcrypt hashes are not as exposing as
-# plaintext passwords, but a public repo could leak them. Track only the
-# .example templates. The live files are created by ./scripts/add-user.sh
-# on each deployment.
+# Per-deployment portal state. desktop.users is the GUI-tier allowlist;
+# admins.users is the portal-elected admins email list (post-v1.0 — the
+# pre-v1.0 bcrypt admins.users file is gone). users.users is leftover
+# legacy; safe to leave ignored either way.
 caddy/users.users
 caddy/admins.users
 caddy/desktop.users

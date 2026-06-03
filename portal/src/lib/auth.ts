@@ -20,7 +20,7 @@
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { config } from './config.js';
-import { slugFromEmail } from './users.js';
+import { slugFromEmail, isExtraAdmin } from './users.js';
 
 export interface AuthedUser {
   // Workspace slug — what we use everywhere as the "username".
@@ -45,22 +45,35 @@ function isAdminByEnv(email: string): boolean {
   return config.adminUsers.includes(email.toLowerCase());
 }
 
-export function getUser(req: FastifyRequest): AuthedUser | null {
+// Three signals, unioned. Order is cheap-to-expensive: env (in-memory),
+// header (already on the request), file (disk read).
+async function isAdminByFile(email: string): Promise<boolean> {
+  try {
+    return await isExtraAdmin(email);
+  } catch {
+    return false; // missing file = no extra admins, not an error
+  }
+}
+
+export async function getUser(req: FastifyRequest): Promise<AuthedUser | null> {
   const rawEmail = firstHeader(req.headers['x-auth-user']);
   if (!rawEmail) return null;
   const email = rawEmail.toLowerCase();
   const username = slugFromEmail(email);
   if (!username) return null;
   const groups = firstHeader(req.headers['x-auth-groups']);
-  const isAdmin = isAdminByGroup(groups) || isAdminByEnv(email);
+  const isAdmin =
+    isAdminByEnv(email) ||
+    isAdminByGroup(groups) ||
+    (await isAdminByFile(email));
   return { username, email, isAdmin };
 }
 
-export function requireUser(
+export async function requireUser(
   req: FastifyRequest,
   reply: FastifyReply,
-): AuthedUser | null {
-  const u = getUser(req);
+): Promise<AuthedUser | null> {
+  const u = await getUser(req);
   if (!u) {
     reply.code(401).type('text/plain').send('Unauthorized');
     return null;
@@ -68,11 +81,11 @@ export function requireUser(
   return u;
 }
 
-export function requireAdmin(
+export async function requireAdmin(
   req: FastifyRequest,
   reply: FastifyReply,
-): AuthedUser | null {
-  const u = requireUser(req, reply);
+): Promise<AuthedUser | null> {
+  const u = await requireUser(req, reply);
   if (!u) return null;
   if (!u.isAdmin) {
     reply.code(403).type('text/plain').send('Admins only');

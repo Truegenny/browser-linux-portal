@@ -81,13 +81,16 @@ export function renderAdmin(args: {
 }
 
 // ---------------------------------------------------------------------------
-// Users — tier management only (identity is owned by Entra)
+// Users — tier management + admin election
 // ---------------------------------------------------------------------------
 export function renderAdminUsers(args: {
   user: string;
   users: { username: string; tier: WorkspaceTier; hasWorkspace: boolean }[];
+  extraAdmins: string[];  // emails, portal-elected (admins.users)
+  envAdmins: string[];    // emails, from ADMIN_USERS env (fallback/bootstrap)
+  hasAdminGroup: boolean; // whether ADMIN_GROUP_OID is configured
 }): string {
-  const { user, users } = args;
+  const { user, users, extraAdmins, envAdmins, hasAdminGroup } = args;
 
   const rows = users.map((u) => {
     const isSelf = u.username === user;
@@ -120,18 +123,62 @@ export function renderAdminUsers(args: {
     ? `<tr><td colspan="4" class="muted">No users discovered yet. Users appear here the first time they sign in via Entra and click "Create my workspace" on /app.</td></tr>`
     : '';
 
+  // Admins block — list portal-elected admin emails with Revoke buttons,
+  // plus a small form to grant admin by email. Also show env/group sources
+  // (read-only) so admins understand the full set.
+  const adminRows = extraAdmins.length === 0
+    ? `<tr><td colspan="2" class="muted">No portal-elected admins yet. Bootstrap admins from <code>ADMIN_USERS</code> env and <code>ADMIN_GROUP_OID</code> are listed below.</td></tr>`
+    : extraAdmins.map((e) => `<tr>
+        <td><code>${esc(e)}</code></td>
+        <td class="actions">
+          <form method="post" action="/admin/users/revoke-admin" style="display:inline">
+            <input type="hidden" name="email" value="${esc(e)}">
+            <button>Revoke admin</button>
+          </form>
+        </td>
+      </tr>`).join('');
+
+  const envAdminList = envAdmins.length
+    ? envAdmins.map((e) => `<code>${esc(e)}</code>`).join(', ')
+    : '<span class="muted small">(none)</span>';
+
+  const groupNote = hasAdminGroup
+    ? 'Members of the Entra security group configured in <code>ADMIN_GROUP_OID</code> are also admin. Manage that group in Entra.'
+    : '<code>ADMIN_GROUP_OID</code> is unset — admin status comes only from this list + <code>ADMIN_USERS</code>.';
+
   const body = `
 <section class="container">
   <h2>Admin</h2>
-  <p class="lead">User tiers. Identity itself is managed in Entra ID — promote/demote admins by adjusting the Entra group, not here.</p>
+  <p class="lead">User tiers and admin election.</p>
   ${adminSubnav('users')}
 
   <h3 style="margin-top:24px">Known users</h3>
-  <p class="muted small">Tier changes take effect on the next workspace restart — running containers keep their current tier until stopped and started again. Admin status comes from the Entra group OID configured in <code>ADMIN_GROUP_OID</code>; it isn’t toggleable per-user from this UI.</p>
+  <p class="muted small">Tier changes take effect on the next workspace restart — running containers keep their current tier until stopped and started again.</p>
   <table class="admin">
     <thead><tr><th>Username</th><th>Tier</th><th>Workspace</th><th>Actions</th></tr></thead>
     <tbody>${rows}${emptyRow}</tbody>
   </table>
+
+  <h3 style="margin-top:32px">Portal-elected admins</h3>
+  <p class="muted small">Grant admin to anyone you've assigned to the ClaudeLab app in Entra. Promotion takes effect on their next page load. Admin status is the union of this list, <code>ADMIN_USERS</code> env, and Entra group membership — any one source makes them admin.</p>
+  <table class="admin">
+    <thead><tr><th>Email</th><th>Actions</th></tr></thead>
+    <tbody>${adminRows}</tbody>
+  </table>
+
+  <form method="post" action="/admin/users/grant-admin" class="user-form" style="margin-top:18px;align-items:end;">
+    <label style="flex:1;max-width:360px;">
+      <span>Email</span>
+      <input name="email" type="email" required placeholder="alice@ntiva.com" autocomplete="off" autocapitalize="off">
+    </label>
+    <button class="cta">Grant admin</button>
+  </form>
+
+  <p class="muted small" style="margin-top:24px;">
+    <strong>Other admin sources:</strong> ${groupNote}<br>
+    <strong>Bootstrap admins (<code>ADMIN_USERS</code> env):</strong> ${envAdminList}.
+    These can't be revoked from here — edit <code>.env</code> on the host and restart the portal container.
+  </p>
 </section>`;
   return layout('Admin — Users', body, { user, isAdmin: true, active: 'admin' });
 }
@@ -151,9 +198,14 @@ export function renderAdminPorts(args: {
     const isTtyd = p.port === 7681;
     const isFiles = p.port === 7682;
     const isDesktop = p.port === 7683;
+    // From the admin ports view, link via the admin path so the link
+    // works for any workspace — the regular /u/<slug>/... routes would
+    // re-route to the admin's own workspace, not the target's. Files
+    // and desktop links use /u/<slug>/... still since cross-user GUI
+    // access for those isn't supported yet (see CLAUDE.md).
     const filesUrl = `/u/${esc(p.user)}/files/`;
     const desktopUrl = `/u/${esc(p.user)}/desktop/`;
-    const portUrl = `/u/${esc(p.user)}/p/${p.port}/`;
+    const portUrl = `/admin/term/${esc(p.user)}/p/${p.port}/`;
     const role = isTtyd
       ? '<span class="muted small">terminal (ttyd)</span>'
       : isFiles

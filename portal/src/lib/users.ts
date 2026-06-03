@@ -1,9 +1,12 @@
 // Per-user portal state. Identity itself comes from Entra ID via
 // oauth2-proxy (X-Auth-User header set by Caddy from
-// X-Auth-Request-Email), so there's no user CRUD in this file anymore —
-// no bcrypt, no users.users, no admins.users. The only file we
-// read/write here is caddy/desktop.users, which lists usernames whose
-// workspace should run the GUI tier.
+// X-Auth-Request-Email), so there's no user CRUD in this file —
+// no bcrypt, no password files. We manage two state files here:
+//
+//   /caddy/desktop.users  — slugs whose workspace runs the GUI tier
+//   /caddy/admins.users   — emails who are admins by portal election
+//                           (in addition to the Entra group OID and
+//                            the ADMIN_USERS env var, both unioned)
 //
 // Slug shape: the local-part of the user's email, lowercased. Dots are
 // allowed (justin.cronin@ntiva.com → justin.cronin). The same regex
@@ -15,6 +18,7 @@ import path from 'node:path';
 
 const CADDY_DIR = '/caddy';
 const DESKTOP_FILE = path.join(CADDY_DIR, 'desktop.users');
+const ADMINS_FILE = path.join(CADDY_DIR, 'admins.users');
 
 export type WorkspaceTier = 'terminal' | 'desktop';
 
@@ -85,4 +89,45 @@ export async function setUserTier(
   const filtered = desktop.filter((u) => u !== username);
   if (tier === 'desktop') filtered.push(username);
   await writePlainList(DESKTOP_FILE, filtered);
+}
+
+// ---------------------------------------------------------------------------
+// admins.users — emails of users elected to admin by another admin from
+// the /admin/users UI. Unioned with the Entra group OID check and the
+// ADMIN_USERS env var; any one of the three makes a user admin.
+// ---------------------------------------------------------------------------
+function normalizeEmail(s: string): string {
+  return s.trim().toLowerCase();
+}
+
+export async function listExtraAdminEmails(): Promise<string[]> {
+  const raw = await readPlainList(ADMINS_FILE);
+  return raw.map(normalizeEmail).filter(Boolean);
+}
+
+export async function isExtraAdmin(email: string): Promise<boolean> {
+  const list = await listExtraAdminEmails();
+  return list.includes(normalizeEmail(email));
+}
+
+export async function setExtraAdmin(
+  email: string,
+  isAdmin: boolean,
+): Promise<void> {
+  const norm = normalizeEmail(email);
+  if (!norm.includes('@') || norm.length < 3) {
+    throw new Error('Invalid email');
+  }
+  const list = await listExtraAdminEmails();
+  const filtered = list.filter((e) => e !== norm);
+  if (isAdmin) filtered.push(norm);
+  // Reuse the desktop.users writer style — a plain header + sorted list.
+  // Slightly different header text since the file's purpose is different.
+  const header =
+    '# Portal-elected admins. Managed by the /admin/users UI.\n' +
+    '# One email per line. Unioned with ADMIN_GROUP_OID and ADMIN_USERS env.\n';
+  const body = Array.from(new Set(filtered))
+    .sort((a, b) => a.localeCompare(b))
+    .join('\n');
+  await fs.writeFile(ADMINS_FILE, header + body + '\n', 'utf8');
 }
