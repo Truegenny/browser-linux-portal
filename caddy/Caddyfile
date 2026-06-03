@@ -143,9 +143,17 @@
 			}
 
 			# Files (filebrowser).
-			@files path_regexp ufiles ^/[^/]+/files(/.*)?$
+			# Filebrowser's --baseurl is set at container-create time using
+			# the portal's lowercased slug (`/u/justin.cronin/files`). The
+			# email header from oauth2-proxy preserves UPN case
+			# (`Justin.Cronin`), so the rewrite path needs to use the URL
+			# slug — which is always rendered lowercase by the dashboard —
+			# rather than the email-derived slug. Upstream still uses the
+			# email slug; Docker DNS is case-insensitive so it resolves the
+			# same container either way.
+			@files path_regexp ufiles ^/([^/]+)/files(/.*)?$
 			handle @files {
-				rewrite * /u/{http.regexp.slug.1}/files{http.regexp.ufiles.1}
+				rewrite * /u/{http.regexp.ufiles.1}/files{http.regexp.ufiles.2}
 				reverse_proxy ws-{http.regexp.slug.1}:7682
 			}
 
