@@ -93,7 +93,21 @@ Either way, you should now have `/opt/blp/docker-compose.yml` and friends.
 
 ---
 
-## 4. Configure environment
+## 4. Set up SSO in Entra ID
+
+**Do this first** — the redirect URI requires the FQDN, which means DNS
+needs to point at the VM. Once DNS is live, follow [SSO.md](./SSO.md)
+end-to-end. You'll come back with these values in hand:
+
+- `OIDC_TENANT_ID`
+- `OIDC_CLIENT_ID`
+- `OIDC_CLIENT_SECRET`
+- `ADMIN_GROUP_OID`
+- `OAUTH2_PROXY_COOKIE_SECRET` (`openssl rand -base64 32`)
+
+---
+
+## 5. Configure environment
 
 ```bash
 cd /opt/blp
@@ -101,48 +115,40 @@ cp .env.example .env
 nano .env
 ```
 
-For a **first-test** deploy on the VM's public IP without DNS, set:
+Fill in:
 
 ```
-DOMAIN=localhost
-ACME_EMAIL=you@yourdomain.com
-CADDY_HTTP_PORT=8080
-CADDY_HTTPS_PORT=8443
-ADMIN_USERS=admin
-WORKSPACE_MEMORY=2g
-WORKSPACE_CPUS=1.5
-WORKSPACE_IDLE_HOURS=2
-```
-
-For a **production** deploy with a real DNS name, set:
-
-```
-DOMAIN=box.yourdomain.com
+SITE_ADDRESS=workspaces.yourdomain.com
 ACME_EMAIL=you@yourdomain.com
 CADDY_HTTP_PORT=80
 CADDY_HTTPS_PORT=443
-ADMIN_USERS=admin
-WORKSPACE_MEMORY=2g
+
+# From step 4 (Entra app registration)
+OIDC_TENANT_ID=…
+OIDC_CLIENT_ID=…
+OIDC_CLIENT_SECRET=…
+OAUTH2_PROXY_COOKIE_SECRET=…
+OAUTH2_PROXY_EMAIL_DOMAINS=yourdomain.com
+
+# Admin signal
+ADMIN_GROUP_OID=…
+ADMIN_USERS=you@yourdomain.com
+
+# Workspace defaults
+WORKSPACE_MEMORY_TERMINAL=2g
+WORKSPACE_MEMORY_DESKTOP=3g
 WORKSPACE_CPUS=1.5
 WORKSPACE_IDLE_HOURS=2
 ```
 
-Caddy will automatically obtain a Let's Encrypt cert on first request when
-`DOMAIN` resolves to the VM's public IP and ports 80 + 443 are reachable from
-the internet.
+`SITE_ADDRESS` is Caddy's site label AND oauth2-proxy's cookie domain.
+Caddy will automatically obtain a Let's Encrypt cert on first request
+as long as the DNS A record points at this VM and ports 80 + 443 are
+reachable from the internet.
 
----
-
-## 5. Add the first user
-
-```bash
-./scripts/add-user.sh admin --admin
-# Type a password (8+ chars) twice.
-```
-
-This bcrypts the password and writes `caddy/users.users` and
-`caddy/admins.users`. The `ADMIN_USERS=admin` env var in `.env` separately
-tells the portal to grant `admin` access to `/admin`.
+There is no first-test mode on `:80` — SSO requires HTTPS. If you need
+a non-production sandbox, deploy under a `dev.` subdomain with the same
+Let's Encrypt cert flow.
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "name": "browser-linux-portal",
-  "version": "0.9.20",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,12 +11,10 @@
   "dependencies": {
     "@fastify/formbody": "^7.4.0",
     "@fastify/static": "^7.0.4",
-    "bcryptjs": "^2.4.3",
     "dockerode": "^4.0.2",
     "fastify": "^4.28.1"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
     "@types/dockerode": "^3.3.31",
     "@types/node": "^20.14.10",
     "tsx": "^4.16.2",

@@ -19,12 +19,9 @@ import {
   getContainerLogs,
 } from './lib/dockerctl.js';
 import {
-  listUsers,
-  addOrUpdateUser,
-  setAdmin,
   setUserTier,
   getUserTier,
-  deleteUser,
+  listDesktopUsers,
   USERNAME_RE,
 } from './lib/users.js';
 import { renderMarketing } from './views/marketing.js';
@@ -50,7 +47,7 @@ const app = Fastify({
 app.addHook('onRequest', csrfGuard);
 
 // Parse application/x-www-form-urlencoded so plain HTML <form method="post">
-// submissions (Create / Stop / Restart / user-management buttons) don't 415.
+// submissions (Stop / Restart / desktop-toggle buttons) don't 415.
 await app.register(fastifyFormbody);
 
 await app.register(fastifyStatic, {
@@ -60,10 +57,11 @@ await app.register(fastifyStatic, {
 });
 
 // ---------------------------------------------------------------------------
-// Public marketing page
+// Public marketing page (still gated by Caddy/oauth2-proxy in production;
+// anyone reaching it is already authenticated)
 // ---------------------------------------------------------------------------
 app.get('/', async (req, reply) => {
-  const u = await getUser(req);
+  const u = getUser(req);
   reply.type('text/html').send(
     renderMarketing({ user: u?.username, isAdmin: u?.isAdmin }),
   );
@@ -81,7 +79,7 @@ app.get('/robots.txt', async (_req, reply) => {
 // Authenticated dashboard
 // ---------------------------------------------------------------------------
 app.get('/app', async (req, reply) => {
-  const u = await requireUser(req, reply);
+  const u = requireUser(req, reply);
   if (!u) return;
   const [ws, tier] = await Promise.all([
     getWorkspace(u.username),
@@ -94,6 +92,7 @@ app.get('/app', async (req, reply) => {
   reply.type('text/html').send(
     renderDashboard({
       user: u.username,
+      email: u.email,
       isAdmin: u.isAdmin,
       workspace: ws,
       listeningPorts,
@@ -106,7 +105,7 @@ app.get('/app', async (req, reply) => {
 // Workspace lifecycle (POST + redirect, plain-form-friendly)
 // ---------------------------------------------------------------------------
 app.post('/api/workspace/start', async (req, reply) => {
-  const u = await requireUser(req, reply);
+  const u = requireUser(req, reply);
   if (!u) return;
   const tier = await getUserTier(u.username);
   await ensureWorkspace(u.username, { tier });
@@ -114,14 +113,14 @@ app.post('/api/workspace/start', async (req, reply) => {
 });
 
 app.post('/api/workspace/stop', async (req, reply) => {
-  const u = await requireUser(req, reply);
+  const u = requireUser(req, reply);
   if (!u) return;
   await stopWorkspace(u.username);
   reply.redirect('/app');
 });
 
 app.post('/api/workspace/restart', async (req, reply) => {
-  const u = await requireUser(req, reply);
+  const u = requireUser(req, reply);
   if (!u) return;
   const tier = await getUserTier(u.username);
   await stopWorkspace(u.username);
@@ -133,7 +132,7 @@ app.post('/api/workspace/restart', async (req, reply) => {
 // Admin — workspaces
 // ---------------------------------------------------------------------------
 app.get('/admin', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
+  const u = requireAdmin(req, reply);
   if (!u) return;
   const workspaces = await listWorkspaces();
   // Pull stats in parallel; tolerate failures.
@@ -150,26 +149,38 @@ app.get('/admin', async (req, reply) => {
 });
 
 app.post('/admin/workspace/:user/start', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
+  const u = requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { user: string }).user;
+  if (!USERNAME_RE.test(target)) {
+    reply.code(400).type('text/plain').send('Invalid username.');
+    return;
+  }
   const tier = await getUserTier(target);
   await ensureWorkspace(target, { tier });
   reply.redirect('/admin');
 });
 
 app.post('/admin/workspace/:user/stop', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
+  const u = requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { user: string }).user;
+  if (!USERNAME_RE.test(target)) {
+    reply.code(400).type('text/plain').send('Invalid username.');
+    return;
+  }
   await stopWorkspace(target);
   reply.redirect('/admin');
 });
 
 app.post('/admin/workspace/:user/destroy', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
+  const u = requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { user: string }).user;
+  if (!USERNAME_RE.test(target)) {
+    reply.code(400).type('text/plain').send('Invalid username.');
+    return;
+  }
   const body = (req.body ?? {}) as { wipe_volume?: string };
   const keepVolume = body.wipe_volume !== 'on';
   await destroyWorkspace(target, { keepVolume });
@@ -177,16 +188,13 @@ app.post('/admin/workspace/:user/destroy', async (req, reply) => {
 });
 
 app.get('/admin/ports', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
+  const u = requireAdmin(req, reply);
   if (!u) return;
   const workspaces = await listWorkspaces();
   const running = workspaces.filter((w) => w.status === 'running');
-  // Pull ports from each running workspace in parallel; tolerate failures.
   const portRows = (
     await Promise.all(
-      running.map((w) =>
-        listListeningPorts(w.user).catch(() => []),
-      ),
+      running.map((w) => listListeningPorts(w.user).catch(() => [])),
     )
   ).flat();
   reply.type('text/html').send(
@@ -200,7 +208,7 @@ app.get('/admin/ports', async (req, reply) => {
 });
 
 app.get('/admin/logs', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
+  const u = requireAdmin(req, reply);
   if (!u) return;
   const logPath = '/var/log/caddy/access.log';
   let lines: string[] = [];
@@ -215,7 +223,7 @@ app.get('/admin/logs', async (req, reply) => {
 
 // Per-user container logs — Docker stdout/stderr for ws-<target>.
 app.get('/admin/logs/:user', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
+  const u = requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { user: string }).user;
   if (!USERNAME_RE.test(target)) {
@@ -242,116 +250,58 @@ app.get('/admin/logs/:user', async (req, reply) => {
 });
 
 // ---------------------------------------------------------------------------
-// Admin — users (manual management; gone in v1.5)
+// Admin — tier management
 // ---------------------------------------------------------------------------
+// No user CRUD anymore — identity is owned by Entra. This page lists every
+// user the portal currently knows about (union of existing workspace
+// containers + entries in desktop.users) and lets the admin toggle the
+// desktop tier per user. New users appear automatically the first time
+// they sign in and create a workspace.
 app.get('/admin/users', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
+  const u = requireAdmin(req, reply);
   if (!u) return;
-  const users = await listUsers();
+  const [workspaces, desktopUsers] = await Promise.all([
+    listWorkspaces(),
+    listDesktopUsers(),
+  ]);
+  const set = new Set<string>(workspaces.map((w) => w.user));
+  desktopUsers.forEach((d) => set.add(d));
+  const desktopSet = new Set(desktopUsers);
+  const users = Array.from(set)
+    .sort((a, b) => a.localeCompare(b))
+    .map((username) => ({
+      username,
+      tier: (desktopSet.has(username) ? 'desktop' : 'terminal') as
+        | 'desktop'
+        | 'terminal',
+      hasWorkspace: workspaces.some((w) => w.user === username),
+    }));
   reply.type('text/html').send(
-    renderAdminUsers({ user: u.username, users, message: null, error: null }),
+    renderAdminUsers({ user: u.username, users }),
   );
 });
 
-app.post('/admin/users/add', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
-  if (!u) return;
-  const body = (req.body ?? {}) as {
-    username?: string;
-    password?: string;
-    is_admin?: string;
-    enable_desktop?: string;
-  };
-  const username = (body.username ?? '').trim().toLowerCase();
-  const password = body.password ?? '';
-  const wantAdmin = body.is_admin === 'on';
-  const wantDesktop = body.enable_desktop === 'on';
-
-  let error: string | null = null;
-  if (!USERNAME_RE.test(username)) error = `Invalid username "${username}".`;
-  if (password.length < 8) error = 'Password must be at least 8 characters.';
-
-  if (error) {
-    const users = await listUsers();
-    reply.type('text/html').send(
-      renderAdminUsers({ user: u.username, users, message: null, error }),
-    );
-    return;
-  }
-
-  try {
-    await addOrUpdateUser(
-      username,
-      password,
-      wantAdmin,
-      wantDesktop ? 'desktop' : 'terminal',
-    );
-  } catch (e: any) {
-    const users = await listUsers();
-    reply.type('text/html').send(
-      renderAdminUsers({
-        user: u.username,
-        users,
-        message: null,
-        error: e.message ?? String(e),
-      }),
-    );
-    return;
-  }
-  reply.redirect('/admin/users');
-});
-
 app.post('/admin/users/:target/enable-desktop', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
+  const u = requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { target: string }).target;
+  if (!USERNAME_RE.test(target)) {
+    reply.code(400).type('text/plain').send('Invalid username.');
+    return;
+  }
   await setUserTier(target, 'desktop');
   reply.redirect('/admin/users');
 });
 
 app.post('/admin/users/:target/disable-desktop', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
+  const u = requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { target: string }).target;
+  if (!USERNAME_RE.test(target)) {
+    reply.code(400).type('text/plain').send('Invalid username.');
+    return;
+  }
   await setUserTier(target, 'terminal');
-  reply.redirect('/admin/users');
-});
-
-app.post('/admin/users/:target/promote', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
-  if (!u) return;
-  const target = (req.params as { target: string }).target;
-  await setAdmin(target, true);
-  reply.redirect('/admin/users');
-});
-
-app.post('/admin/users/:target/demote', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
-  if (!u) return;
-  const target = (req.params as { target: string }).target;
-  if (target === u.username) {
-    reply.code(400).type('text/plain').send("You can't demote yourself.");
-    return;
-  }
-  await setAdmin(target, false);
-  reply.redirect('/admin/users');
-});
-
-app.post('/admin/users/:target/delete', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
-  if (!u) return;
-  const target = (req.params as { target: string }).target;
-  if (target === u.username) {
-    reply.code(400).type('text/plain').send("You can't delete yourself.");
-    return;
-  }
-  const body = (req.body ?? {}) as { wipe_workspace?: string };
-  if (body.wipe_workspace === 'on') {
-    await destroyWorkspace(target, { keepVolume: false }).catch(() => {
-      // If destroy fails (e.g. no workspace ever existed), proceed with delete.
-    });
-  }
-  await deleteUser(target);
   reply.redirect('/admin/users');
 });
 
@@ -367,7 +317,12 @@ const start = async () => {
   try {
     await app.listen({ port: config.port, host: '0.0.0.0' });
     app.log.info(
-      { port: config.port, domain: config.domain, admins: config.adminUsers },
+      {
+        port: config.port,
+        domain: config.domain,
+        admins: config.adminUsers,
+        adminGroup: config.adminGroupOid || '(none — using ADMIN_USERS only)',
+      },
       'portal up',
     );
   } catch (err) {

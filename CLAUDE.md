@@ -3,50 +3,57 @@
 A self-hosted dev workspace platform. One Linux VM, Docker, a per-user Debian
 container with `claude` (Claude Code CLI), `ttyd` (browser terminal), and
 `filebrowser` (drag-and-drop file manager). Caddy fronts everything with
-basic auth (Entra OIDC planned for v1.5). Marketed as a small alternative to
+Entra ID SSO via oauth2-proxy. Marketed as a small alternative to
 Coder / Codespaces / WebVM.
 
 Repo: https://github.com/Truegenny/browser-linux-portal (private — verify before pushing anything sensitive)
 
-If you're a fresh Claude session: **read the README first, then this file.**
-The README covers user-facing setup; this file covers architecture decisions,
-conventions, and gotchas that aren't obvious from the code.
+If you're a fresh Claude session: **read the README first, then this file,
+then `docs/SSO.md` if you're touching anything auth-related.**
 
 ---
 
 ## Current state
 
-- **Version:** see `portal/package.json` (`v0.7.3` at time of writing)
-- **Deployed:** Ubuntu 24.04 VM on Azure (`ClaudeDocker`, public IP 20.125.57.59), running directly as Docker containers (not Portainer). Repo cloned at `~/browser-linux-portal`.
+- **Version:** see `portal/package.json` (`v1.0.0`+ at time of writing — first prod release with SSO)
+- **Auth:** Entra ID via oauth2-proxy. Basic-auth is GONE — no more `users.users`/`admins.users`/`add-user.sh`.
+- **Deployment target:** new Azure subscription (TBD), greenfield. The old `ClaudeDocker` VM at 20.125.57.59 is the dev/staging history; production lives elsewhere.
 - **Stack name:** `browser-linux-portal` (compose project)
-- **Public port:** 8080 (HTTP, no DNS yet — IP-only access). Production setup with TLS is documented in `docs/DEPLOY.md` but not yet deployed.
+- **Public ports (prod):** 80, 443. TLS via Let's Encrypt against `SITE_ADDRESS`.
 
 ## Architecture
 
 ```
   Browser
-    │  HTTPS or HTTP
+    │  HTTPS (Let's Encrypt cert managed by Caddy)
     ▼
-┌─────────┐   basic_auth (today)   →   oauth2-proxy + Entra ID (v1.5 plan)
-│  Caddy  │   sets X-Auth-User from auth identity
-└────┬────┘
+┌─────────┐   forward_auth ──→ ┌───────────────┐
+│  Caddy  │  ←── X-Auth-Req-* ─│ oauth2-proxy  │ ──→ Entra ID OIDC
+└────┬────┘                    └───────────────┘
+     │  copies X-Auth-Request-{Email,Groups} onto inbound request
      │
      ├── portal-net ────→ portal:3000      (control plane)
      │     ├──→ /                   public marketing page              (portal)
      │     ├──→ /app, /admin, /api  authed dashboard / admin / API     (portal)
-     │     └──→ /logout             cache-poison page (no auth)        (Caddy inline)
+     │     └──→ /oauth2/*           login/callback/sign_out            (oauth2-proxy)
      │
-     └── workspace-net ─→ ws-<auth_user>   (data plane; portal NOT on this net)
-           ├──→ /u/<slug>/desktop/<…> →  ws-<auth_user>:7683  (KasmVNC + XFCE4 GUI)
-           ├──→ /u/<slug>/files/<…>   →  ws-<auth_user>:7682  (filebrowser)
-           ├──→ /u/<slug>/p/<port>/<…> →  ws-<auth_user>:<port>  (user webapp)
-           ├──→ /u/<slug>/<…>         →  ws-<auth_user>:7681  (ttyd terminal)
+     └── workspace-net ─→ ws-<slug>      (data plane; portal NOT on this net)
+           ├──→ /u/<slug>/desktop/<…> →  ws-<slug>:7683   (KasmVNC + XFCE4 GUI)
+           ├──→ /u/<slug>/files/<…>   →  ws-<slug>:7682   (filebrowser)
+           ├──→ /u/<slug>/p/<port>/<…> →  ws-<slug>:<port> (user webapp)
+           ├──→ /u/<slug>/<…>         →  ws-<slug>:7681   (ttyd terminal)
            └──→ /admin/term/<target>/<…> → ws-<target>:7681   (admin-only)
 ```
 
-Three running services in compose: `caddy`, `portal`, and a one-shot
+Slug = lowercase local-part of the user's Entra email. `justin.cronin@ntiva.com`
+→ `justin.cronin`. Caddy captures it from `X-Auth-Request-Email` via a
+`header_regexp` matcher; the portal does the same derivation in
+`lib/users.ts::slugFromEmail`. If those ever drift, `/u/...` routes to a
+different container than the portal thinks the user owns — keep them in sync.
+
+Four services in compose: `caddy`, `oauth2-proxy`, `portal`, and a one-shot
 `workspace-image-builder` (builds the per-user image, exits 0). Workspace
-containers (`ws-<user>`) are spawned dynamically by the portal via the
+containers (`ws-<slug>`) are spawned dynamically by the portal via the
 Docker socket as users sign in. Caddy is the only service attached to
 both networks; the portal is deliberately isolated from `workspace-net`
 so a compromised workspace can't reach `portal:3000` and forge headers.
@@ -54,14 +61,16 @@ so a compromised workspace can't reach `portal:3000` and forge headers.
 ## Critical conventions (don't break these)
 
 1. **Route by auth identity, not URL slot.** Every `/u/<slot>/...` route
-   ignores `<slot>` and proxies to `ws-<auth_user>:...`. This is more
-   secure than comparing slot to auth (no way to even attempt cross-user
-   access) and we proved the alternative — CEL expression matchers and
-   placeholder substitution in `path_regexp` patterns — is fragile.
+   ignores `<slot>` and proxies to `ws-<slug>:...` where `<slug>` is
+   derived from the authenticated user's email. This is more secure than
+   comparing slot to auth (no way to even attempt cross-user access) and
+   we proved the alternative — CEL expression matchers and placeholder
+   substitution in `path_regexp` patterns — is fragile.
 
    **Exception**: `/admin/term/<target>/...` (and only that path) routes
    by URL slot to `ws-<target>:7681` for admin shell access into other
-   workspaces. The whole subtree is gated by `admin_auth` in Caddy so
+   workspaces. The whole subtree is gated in Caddy by a matcher that
+   checks `X-Auth-Request-Groups` for `{$ADMIN_GROUP_OID}`, so
    non-admins can't even attempt it. Filebrowser/KasmVNC are NOT
    admin-accessible cross-user — they bake `/u/<self>/...` into their
    own served URLs and don't compose with a different prefix. If you
@@ -70,27 +79,30 @@ so a compromised workspace can't reach `portal:3000` and forge headers.
 
 2. **Workspace ports must bind `0.0.0.0`** to be reachable through the
    proxy. `127.0.0.1` works inside the container but is unreachable from
-   Caddy on `portal-net`. The dashboard ports sidebar flags loopback
+   Caddy on `workspace-net`. The dashboard ports sidebar flags loopback
    binds explicitly.
 
-3. **Auth contract is `X-Auth-User` header.** Caddy sets it after
-   basic_auth. The portal trusts it because (a) the portal is never
-   published — only Caddy is, and (b) workspace containers live on
-   `workspace-net` which the portal is NOT attached to, so they can't
-   reach `portal:3000` to forge it from inside a shell. Same header set
-   by oauth2-proxy in v1.5; portal code doesn't change. **Never attach
-   the portal to `workspace-net`** — that re-opens the bypass.
+3. **Auth contract is `X-Auth-User` + `X-Auth-Groups` headers.** Caddy
+   gets these from oauth2-proxy via `forward_auth` and re-emits them on
+   the upstream request. The portal trusts them because (a) the portal
+   is never published — only Caddy is, and (b) workspace containers
+   live on `workspace-net` which the portal is NOT attached to, so they
+   can't reach `portal:3000` to forge headers from inside a shell.
+   **Never attach the portal to `workspace-net`** — that re-opens the
+   bypass.
 
    Additionally, the portal rejects cross-origin state-changing requests
    via an `onRequest` hook (`portal/src/lib/csrf.ts`) that checks
-   `Sec-Fetch-Site` + `Origin`. This blocks browser-CSRF; the network
-   split blocks workspace-side curl forgery. Both layers go away in v1.5
-   when oauth2-proxy adds its own session/CSRF handling.
+   `Sec-Fetch-Site` + `Origin`. Defence in depth alongside oauth2-proxy's
+   own session cookie + SameSite=Lax.
 
-4. **Username regex everywhere:** `^[a-z0-9][a-z0-9_-]{0,30}$`. Defined
-   in `portal/src/lib/users.ts` (`USERNAME_RE`). Don't relax; it's
-   load-bearing for safe interpolation into URLs, container names,
-   volume names, and shell args.
+4. **Username regex everywhere:** `^[a-z0-9][a-z0-9._-]{0,40}$`. Defined
+   in `portal/src/lib/users.ts` (`USERNAME_RE`) and mirrored verbatim in
+   the Caddyfile's `path_regexp` matchers and `header_regexp` slug
+   capture. Don't relax; it's load-bearing for safe interpolation into
+   URLs, container names, volume names, and shell args. Dots are
+   allowed only because email local-parts contain them — Docker accepts
+   them in container names, and URLs render them fine.
 
 5. **Workspace identity = auth identity.** Container `ws-<user>`,
    volume `ws-<user>-home` mounted at `/home/node`. The in-container
@@ -100,24 +112,27 @@ so a compromised workspace can't reach `portal:3000` and forge headers.
 ## Top-level layout
 
 ```
-caddy/                 — Caddyfile + *.users.example templates
-                         (real users.users + admins.users are GITIGNORED;
-                          ./scripts/add-user.sh creates them on each VM)
+caddy/                 — Caddyfile + desktop.users.example
+                         (real desktop.users is GITIGNORED, managed via
+                          the /admin/users UI at runtime)
 portal/                — Fastify + TS app
   src/
     server.ts          — routes
     lib/
-      auth.ts          — reads X-Auth-User; admin status from admins.users
-      config.ts        — env loader
+      auth.ts          — reads X-Auth-User/X-Auth-Groups headers
+      config.ts        — env loader (incl. ADMIN_GROUP_OID)
+      csrf.ts          — onRequest CSRF guard for state-changing methods
       dockerctl.ts     — workspace lifecycle, port-listing via `ss -tln`
       html.ts          — layout helper (header/footer + version)
-      users.ts         — file-based user CRUD + bcryptjs + caddy reload
+      users.ts         — slug derivation + desktop.users helpers
       version.ts       — reads package.json at runtime
     views/             — server-rendered HTML (template literals)
   public/styles.css    — single dark-themed stylesheet
 workspace-image/       — Dockerfile + entrypoint for ws-* containers
-scripts/               — add-user.sh, build-workspace-image.sh, idle-stop.sh
-docs/DEPLOY.md         — Ubuntu/Azure deploy runbook (THE authoritative one)
+scripts/               — build-workspace-image.sh, idle-stop.sh
+docs/
+  DEPLOY.md            — Ubuntu/Azure deploy runbook (start here)
+  SSO.md               — Entra ID app-registration + claims walkthrough
 ```
 
 ## User tiers (terminal vs desktop)
@@ -143,19 +158,21 @@ preserving the home volume. The current container's tier is shown in
 
 ## Key knobs (`.env` → compose env)
 
-- `SITE_ADDRESS` — Caddy site label. `:80` (default) for IP/HTTP-only,
-  `box.example.com` for prod with auto-Let's Encrypt.
-- `CADDY_HTTP_PORT` / `CADDY_HTTPS_PORT` — host port mappings
+- `SITE_ADDRESS` — production FQDN (e.g. `workspaces.ntiva.com`). Caddy
+  site label AND oauth2-proxy cookie domain. SSO requires HTTPS so this
+  must be a real DNS name with ports 80+443 reachable.
+- `CADDY_HTTP_PORT` / `CADDY_HTTPS_PORT` — host port mappings (80/443 in prod)
+- `OIDC_TENANT_ID` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` — Entra app registration
+- `OAUTH2_PROXY_COOKIE_SECRET` — 32 random bytes, base64. Rotating it logs everyone out.
+- `OAUTH2_PROXY_EMAIL_DOMAINS` — comma-separated allowlist (e.g. `ntiva.com`)
+- `ADMIN_GROUP_OID` — Entra security group whose members get admin
+- `ADMIN_USERS` — bootstrap admin allowlist by email (fallback / first-sign-in)
 - `WORKSPACE_MEMORY_TERMINAL` (2g) / `WORKSPACE_MEMORY_DESKTOP` (3g) — per-tier RAM caps
 - `WORKSPACE_CPUS` / `WORKSPACE_IDLE_HOURS` — per-container limits
-- `ADMIN_USERS` — bootstrap admin allowlist (file `admins.users` is the runtime source of truth)
 
 ## Common commands (inside the project root)
 
 ```bash
-# Add or reset a basicauth user (interactive password prompt)
-./scripts/add-user.sh <name> [--admin]
-
 # Rebuild workspace image (after Dockerfile changes); ~5-10 min
 docker compose build --no-cache workspace-image
 
@@ -231,8 +248,8 @@ for c in $(docker ps -aq --filter "name=^ws-"); do docker rm -f "$c"; done
 
 - `fastify` + `@fastify/static` + `@fastify/formbody` — HTTP server
 - `dockerode` + `@types/dockerode` — Docker socket client
-- `bcryptjs` + `@types/bcryptjs` — password hashing for user mgmt
-  (pure JS so no native build step in the Alpine image)
+(bcryptjs was removed in v1.0 — no more local password hashing. Entra
+owns identity now.)
 
 ## Workspace image contents (per-user `browser-linux-workspace:latest`)
 
@@ -256,7 +273,8 @@ for c in $(docker ps -aq --filter "name=^ws-"); do docker rm -f "$c"; done
 
 ## Things explicitly NOT to do
 
-- ❌ `git add caddy/users.users` or `caddy/admins.users` — they are gitignored on purpose; committing them leaks bcrypt hashes
+- ❌ `git add caddy/desktop.users` — gitignored on purpose (per-deployment runtime state)
+- ❌ Re-introduce `users.users` / `admins.users` / `add-user.sh` — identity is Entra's job now; local user management defeats SSO
 - ❌ Set the repo back to **Public** without re-auditing what's tracked
 - ❌ `docker run -p` to publish workspace ports — proxy already does it via `/u/<user>/p/<port>/`
 - ❌ Add new Azure NSG inbound rules per workspace — only 8080 (or 80/443 in prod) needs to be open
@@ -271,11 +289,11 @@ for c in $(docker ps -aq --filter "name=^ws-"); do docker rm -f "$c"; done
 
 | Version | Goal |
 |---|---|
-| **v0.9.x** (current) | XFCE4 GUI desktop + Firefox via KasmVNC at `/u/<user>/desktop/` |
 | v0.7.x | Filebrowser embedded, dark mode |
 | v0.8 | Auto-refresh ports sidebar (HTMX or small JS poll); workspace template variants (Python-heavy / Go-heavy / etc.) |
-| **v1.5** | Replace basic_auth with oauth2-proxy + Entra ID OIDC. Caddyfile swap; portal code unchanged because of the X-Auth-User contract. |
-| v2.0 | Per-user Anthropic API key storage (encrypted, libsodium), audit log to Postgres, group→admin sync from IdP |
+| v0.9.x | XFCE4 GUI desktop + Firefox via KasmVNC at `/u/<user>/desktop/`; per-user terminal/desktop tiers; admin cross-user terminal + logs |
+| **v1.0 (current)** | Entra ID SSO via oauth2-proxy; basic-auth retired; admin via Entra group OID; first production deploy |
+| v2.0 | Per-user Anthropic API key storage (encrypted, libsodium), audit log to Postgres |
 | v2.5 | Workspace sharing (invite links), public file viewer for `~/public`, snapshot/clone |
 
 ## Open improvements / debt

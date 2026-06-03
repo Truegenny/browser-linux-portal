@@ -1,228 +1,191 @@
 {
 	# Global options
-	# In dev (DOMAIN=localhost) Caddy uses its internal CA / self-signed.
-	# In prod, Caddy requests a real cert from Let's Encrypt automatically.
 	email {$ACME_EMAIL:admin@example.com}
-	# auto_https off  # uncomment to disable HTTPS while iterating
-}
-
-# ---------------------------------------------------------------------------
-# Reusable auth snippets — populated by scripts/add-user.sh
-# Each line:  username  bcrypt_hash
-# ---------------------------------------------------------------------------
-(user_auth) {
-	basic_auth {
-		import /etc/caddy/users.users
-	}
-}
-
-(admin_auth) {
-	basic_auth {
-		import /etc/caddy/admins.users
-	}
 }
 
 # ===========================================================================
-# Main site
+# Main site — SSO via oauth2-proxy + Entra ID
 # ---------------------------------------------------------------------------
-# SITE_ADDRESS controls how Caddy serves this stack:
+# Auth flow:
+#   1. Browser → Caddy.
+#   2. For everything except /oauth2/*, Caddy issues a forward_auth
+#      subrequest to oauth2-proxy:/oauth2/auth. oauth2-proxy validates
+#      the session cookie:
+#        - Valid: 202 + X-Auth-Request-{Email,User,Groups} headers.
+#          Caddy copies those onto the inbound request and continues
+#          to the route handler.
+#        - Invalid: 401. Caddy intercepts (`@oauth2_auth_fail`) and
+#          302s the browser to /oauth2/start?rd=<original-url> so
+#          oauth2-proxy can kick off the Entra OIDC handshake.
+#   3. /oauth2/* itself is fully proxied (no auth) to oauth2-proxy.
+#      This is where /oauth2/start, /oauth2/callback, /oauth2/sign_out
+#      live.
 #
-#   :80            (default)  — bind HTTP on port 80, ANY Host header.
-#                               Use for IP-based access without DNS or TLS.
-#                               Caddy will NOT auto-enable HTTPS.
-#
-#   box.you.com    (prod)     — bind both 80 and 443 for that hostname,
-#                               auto-fetch a Let's Encrypt cert, redirect
-#                               HTTP→HTTPS. DNS A record must point at this
-#                               VM and ports 80/443 must be open.
+# Slug derivation:
+#   X-Auth-Request-Email is lowercase'd by oauth2-proxy. We use
+#   header_regexp to capture the local-part as the workspace slug
+#   (USERNAME_RE in the portal matches the same shape). The slug is
+#   interpolated into reverse_proxy upstreams as ws-<slug>:<port>.
 # ===========================================================================
 {$SITE_ADDRESS::80} {
-	# ----- PUBLIC: marketing landing page + static assets -------------------
+	# ----- OAUTH2-PROXY: login/callback/sign_out endpoints -----------------
+	# Full pass-through — must NOT require auth, since this is where the
+	# handshake happens. oauth2-proxy handles cookie setting on callback.
+	handle /oauth2/* {
+		reverse_proxy oauth2-proxy:4180 {
+			header_up X-Real-IP {http.request.remote.host}
+			header_up X-Forwarded-Host {http.request.host}
+			header_up X-Forwarded-Proto {http.request.scheme}
+		}
+	}
+
+	# ----- FORWARD AUTH: validate session on every other request -----------
+	# Sets X-Auth-Request-* response headers on success; Caddy copies them
+	# onto the inbound request via copy_headers. On 401 we redirect to
+	# /oauth2/start with the original URL preserved for post-login bounce.
+	#
+	# IMPORTANT: must NOT match /oauth2/* — Caddy's directive order runs
+	# forward_auth (at the "auth" slot) BEFORE handle blocks ("handler"
+	# slot). Without the @protected matcher, the OIDC callback itself
+	# would be intercepted by forward_auth and bounced to /oauth2/start
+	# in a loop.
+	@protected not path /oauth2/*
+	forward_auth @protected oauth2-proxy:4180 {
+		uri /oauth2/auth
+		copy_headers X-Auth-Request-Email X-Auth-Request-User X-Auth-Request-Groups X-Auth-Request-Preferred-Username
+
+		@auth_failed status 401
+		handle_response @auth_failed {
+			redir * /oauth2/start?rd={http.request.uri} 302
+		}
+	}
+
+	# ----- PUBLIC marketing page -------------------------------------------
+	# Anything not behind oauth2-proxy still needs to be served; the
+	# forward_auth above will redirect unauthenticated visitors away.
+	# Authenticated users land on the marketing page like anyone else.
 	@public path / /static/* /favicon.ico /favicon.svg /robots.txt
 	handle @public {
-		reverse_proxy portal:3000
+		reverse_proxy portal:3000 {
+			header_up X-Auth-User {http.request.header.X-Auth-Request-Email}
+			header_up X-Auth-Groups {http.request.header.X-Auth-Request-Groups}
+		}
 	}
 
-	# ----- LOGOUT: poison browser basic-auth cache, then redirect home ------
-	# HTTP basic auth has no protocol-level logout. The reliable cross-
-	# browser trick is to issue a fetch() with bogus credentials so the
-	# browser overwrites its cached creds for the /app realm, then send
-	# the user back to /. The page below is served without basic_auth
-	# (it's outside the auth-gated routes) so a sign-out works even if
-	# the user has already been kicked.
-	handle /logout {
-		header Content-Type "text/html; charset=utf-8"
-		respond 200 `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Signing out…</title>
-<link rel="stylesheet" href="/static/styles.css">
-</head>
-<body>
-<header class="site">
-  <a class="brand" href="/"><span class="glyph">_$</span> Browser Linux</a>
-</header>
-<section class="container" style="text-align:center;padding:80px 24px;">
-  <h2>Signing you out…</h2>
-  <p class="muted">Clearing cached credentials. Redirecting home.</p>
-  <p class="muted small">Tip: closing this browser tab also fully clears HTTP basic-auth credentials.</p>
-</section>
-<script>
-  // Send bogus Basic creds at /app so the browser overwrites whatever
-  // it had cached for that realm. Then go home.
-  fetch('/app', {
-    method: 'HEAD',
-    headers: { 'Authorization': 'Basic ' + btoa('logout:logout') },
-    cache: 'no-store',
-    credentials: 'include'
-  }).catch(function () {}).finally(function () {
-    setTimeout(function () { window.location.href = '/'; }, 500);
-  });
-</script>
-</body>
-</html>`
-	}
-
-	# ----- ADMIN: cross-user terminal (admin-only) --------------------------
-	# /admin/term/<target>/... → ws-<target>:7681 (ttyd).
-	#
-	# This is the deliberate exception to "route by auth, never by URL
-	# slot" (CLAUDE.md convention #1). Admins need shell access into
-	# other workspaces for support/debugging; gating the whole tree on
-	# admin_auth means non-admins can't even attempt cross-user access.
-	# Only ttyd is exposed this way — filebrowser/KasmVNC each bake the
-	# /u/<self>/... prefix into their own served URLs and would need a
-	# bigger refactor to support cross-user access.
+	# ----- ADMIN: cross-user terminal (admin-only) -------------------------
+	# Same as v0.9.20, now gated on Entra group membership instead of
+	# admin_auth basic-auth realm. We check that the user's groups header
+	# (comma-separated GUIDs from Entra) contains the configured admin
+	# group OID.
 	#
 	# Username regex matches USERNAME_RE in the portal (lib/users.ts) so
 	# malformed slots 404 before reaching reverse_proxy / DNS.
+	@is_admin header X-Auth-Request-Groups *{$ADMIN_GROUP_OID}*
 	handle_path /admin/term/* {
-		import admin_auth
-		@adm_term path_regexp admterm ^/([a-z0-9][a-z0-9_-]{0,30})(/.*)?$
-		handle @adm_term {
-			rewrite * {http.regexp.admterm.2}
-			reverse_proxy ws-{http.regexp.admterm.1}:7681
+		handle @is_admin {
+			@adm_term path_regexp admterm ^/([a-z0-9][a-z0-9._-]{0,40})(/.*)?$
+			handle @adm_term {
+				rewrite * {http.regexp.admterm.2}
+				reverse_proxy ws-{http.regexp.admterm.1}:7681
+			}
+			respond 404
 		}
-		respond 404
+		respond "Admins only" 403
 	}
 
-	# ----- ADMIN: extra-gated, admin-only basicauth -------------------------
+	# ----- ADMIN: portal-served dashboard / users / ports / logs ----------
+	# Portal verifies admin status itself (lib/auth.ts reads
+	# X-Auth-Groups). Caddy forwards everything; the portal returns 403
+	# for non-admins. This avoids duplicating the admin check between
+	# Caddy and the portal for paths the portal already gates.
 	handle /admin* {
-		import admin_auth
 		reverse_proxy portal:3000 {
-			header_up X-Auth-User {http.auth.user.id}
+			header_up X-Auth-User {http.request.header.X-Auth-Request-Email}
+			header_up X-Auth-Groups {http.request.header.X-Auth-Request-Groups}
 		}
 	}
 
-	# ----- USER WORKSPACE: /u/<anything>/[p/<port>/]* -> ws-<auth_user> -----
-	# Routing is purely by the authenticated user. The user slot in the URL
-	# is ignored — Caddy strips it and proxies to the workspace owned by
-	# whoever is authenticated. There is no way to even attempt to reach
-	# another user's workspace; alice typing /u/bob/ silently lands in
-	# alice's own container.
+	# ----- USER WORKSPACE: /u/<anything>/[p/<port>/]* -> ws-<auth_user> ---
+	# Slot in the URL is ignored. The slug used for upstream selection is
+	# captured from the authenticated user's email — same model as before,
+	# just with the email header instead of basic_auth's user.id.
 	#
-	# Two upstreams within the workspace:
-	#
-	#   /u/<slug>/p/<port>/<rest>   →  ws-<auth_user>:<port>/<rest>
-	#       Use this to expose any HTTP/WS service you bind on
-	#       0.0.0.0:<port> inside your workspace (test webapps, dev
-	#       servers, jupyter, anything). Caddy will WebSocket-upgrade
-	#       automatically. Use relative URLs in your app or set a
-	#       <base href="/u/<slug>/p/<port>/"> for absolute paths.
-	#
-	#   /u/<slug>/<rest>            →  ws-<auth_user>:7681/<rest>
-	#       Default — the in-browser bash terminal (ttyd).
-	#
-	# `handle_path /u/*` strips the `/u` prefix.
+	# All four service handlers below depend on the `@have_slug` matcher
+	# populating {http.regexp.slug.1} from X-Auth-Request-Email. If the
+	# header is missing or malformed, the whole /u/* tree 502s rather
+	# than potentially routing to ws-<empty>:port.
+	@have_slug header_regexp slug X-Auth-Request-Email ^([a-z0-9][a-z0-9._-]{0,40})@
+
 	handle_path /u/* {
-		import user_auth
+		handle @have_slug {
+			# Desktop (KasmVNC HTTPS upstream, snakeoil cert).
+			@desktop_root path_regexp dskroot ^/[^/]+/desktop/?$
+			handle @desktop_root {
+				redir * /u/{http.regexp.slug.1}/desktop/index.html?path=u/{http.regexp.slug.1}/desktop/websockify 302
+			}
 
-		# Desktop (KasmVNC / XFCE4). KasmVNC serves HTTPS only with a
-		# self-signed snakeoil cert; Caddy talks to it as an HTTPS
-		# upstream with tls_insecure_skip_verify (the connection is
-		# inside workspace-net, so no real-world MITM risk). We strip the
-		# /<slug>/desktop prefix because KasmVNC's HTML uses relative
-		# URLs and serves at its own root.
-		# Bare /u/<user>/desktop[/] → redirect to index.html with a
-		# `path` query param so the noVNC HTML5 client opens its
-		# WebSocket at the prefixed URL (which we proxy correctly).
-		# KasmVNC 1.3.3 doesn't support a subpath config setting;
-		# this URL-param trick is the workaround. The entry point is
-		# /index.html (NOT /vnc.html — that 404s in this build).
-		#
-		# Both the redirect and the proxy-pass below must be inside
-		# `handle` blocks so they're at the same Caddy priority and
-		# declaration order wins; a bare top-level `redir` is sorted
-		# AFTER `handle` and never fires.
-		@desktop_root path_regexp dskroot ^/[^/]+/desktop/?$
-		handle @desktop_root {
-			redir * /u/{http.auth.user.id}/desktop/index.html?path=u/{http.auth.user.id}/desktop/websockify 302
-		}
-
-		# Everything under /u/<user>/desktop/<...>  → strip the prefix
-		# and proxy to KasmVNC at the root of its own httpd. KasmVNC
-		# uses relative URLs in its served HTML for assets, so the
-		# browser will re-request them through this same handler.
-		@desktop path_regexp udesk ^/[^/]+/desktop(/.*)?$
-		handle @desktop {
-			rewrite * {http.regexp.udesk.1}
-			# NB: no `https://` scheme in the upstream — Caddy refuses
-			# placeholders when a scheme is present. The `tls` line in
-			# the transport block is what enables HTTPS to KasmVNC.
-			reverse_proxy ws-{http.auth.user.id}:7683 {
-				transport http {
-					tls
-					tls_insecure_skip_verify
+			@desktop path_regexp udesk ^/[^/]+/desktop(/.*)?$
+			handle @desktop {
+				rewrite * {http.regexp.udesk.1}
+				reverse_proxy ws-{http.regexp.slug.1}:7683 {
+					transport http {
+						tls
+						tls_insecure_skip_verify
+					}
 				}
 			}
-		}
 
-		# File browser (filebrowser).
-		@files path_regexp ufiles ^/[^/]+/files(/.*)?$
-		handle @files {
-			rewrite * /u/{http.auth.user.id}/files{http.regexp.ufiles.1}
-			reverse_proxy ws-{http.auth.user.id}:7682
-		}
+			# Files (filebrowser).
+			@files path_regexp ufiles ^/[^/]+/files(/.*)?$
+			handle @files {
+				rewrite * /u/{http.regexp.slug.1}/files{http.regexp.ufiles.1}
+				reverse_proxy ws-{http.regexp.slug.1}:7682
+			}
 
-		# Webapp port-proxy.
-		@port_proxy path_regexp pport ^/[^/]+/p/(\d+)(/.*)?$
-		handle @port_proxy {
-			rewrite * {http.regexp.pport.2}
-			reverse_proxy ws-{http.auth.user.id}:{http.regexp.pport.1}
-		}
+			# Webapp port-proxy.
+			@port_proxy path_regexp pport ^/[^/]+/p/(\d+)(/.*)?$
+			handle @port_proxy {
+				rewrite * {http.regexp.pport.2}
+				reverse_proxy ws-{http.regexp.slug.1}:{http.regexp.pport.1}
+			}
 
-		# Everything else → the terminal.
-		@user_path path_regexp upath ^/[^/]+(/.*)?$
-		handle @user_path {
-			rewrite * {http.regexp.upath.1}
-			reverse_proxy ws-{http.auth.user.id}:7681
+			# Terminal (ttyd) — default.
+			@user_path path_regexp upath ^/[^/]+(/.*)?$
+			handle @user_path {
+				rewrite * {http.regexp.upath.1}
+				reverse_proxy ws-{http.regexp.slug.1}:7681
+			}
+			respond 404
 		}
-		respond 404
+		# No usable slug — should never happen because forward_auth
+		# would have redirected an unauthenticated user already.
+		respond "Auth header missing" 502
 	}
 
-	# ----- AUTHENTICATED APP: dashboard -------------------------------------
+	# ----- AUTHENTICATED APP: dashboard + API ----------------------------
 	handle /app* {
-		import user_auth
 		reverse_proxy portal:3000 {
-			header_up X-Auth-User {http.auth.user.id}
+			header_up X-Auth-User {http.request.header.X-Auth-Request-Email}
+			header_up X-Auth-Groups {http.request.header.X-Auth-Request-Groups}
 		}
 	}
 
 	handle /api/* {
-		import user_auth
 		reverse_proxy portal:3000 {
-			header_up X-Auth-User {http.auth.user.id}
+			header_up X-Auth-User {http.request.header.X-Auth-Request-Email}
+			header_up X-Auth-Groups {http.request.header.X-Auth-Request-Groups}
 		}
 	}
 
-	# ----- DEFAULT: send anything else to the portal (which 404s) -----------
+	# ----- DEFAULT: anything else goes to the portal (404s) ---------------
 	handle {
-		reverse_proxy portal:3000
+		reverse_proxy portal:3000 {
+			header_up X-Auth-User {http.request.header.X-Auth-Request-Email}
+			header_up X-Auth-Groups {http.request.header.X-Auth-Request-Groups}
+		}
 	}
 
-	# ----- LOGGING ----------------------------------------------------------
+	# ----- LOGGING -------------------------------------------------------
 	log {
 		output file /var/log/caddy/access.log {
 			roll_size 10mb

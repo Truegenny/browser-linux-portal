@@ -1,3 +1,0 @@
-# One line per admin:  <username> <bcrypt-hash>
-# Admins also need to exist in users.users to access regular pages.
-# Add admins via:  ./scripts/add-user.sh --admin <username>

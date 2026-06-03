@@ -28,10 +28,16 @@ export const config = {
   workspaceMemoryDesktop: env('WORKSPACE_MEMORY_DESKTOP', '3g'),
   workspaceCpus: env('WORKSPACE_CPUS', '1.5'),
   workspaceIdleHours: envNum('WORKSPACE_IDLE_HOURS', 2),
-  adminUsers: env('ADMIN_USERS', 'admin')
+  // Bootstrap admin allowlist by email. The canonical signal is the Entra
+  // groups claim — see adminGroupOid — but this env is the fallback for
+  // first sign-in before the group is wired up.
+  adminUsers: env('ADMIN_USERS', '')
     .split(',')
-    .map((s) => s.trim())
+    .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
+  // Entra group object ID whose members get admin. Empty string disables
+  // group-based admin entirely; users would then need ADMIN_USERS entries.
+  adminGroupOid: env('ADMIN_GROUP_OID', '').trim(),
 } as const;
 
 // Convert "2g" / "512m" to bytes for dockerode.

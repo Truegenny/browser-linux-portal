@@ -4,12 +4,13 @@ import type { WorkspaceTier } from '../lib/users.js';
 
 export function renderDashboard(args: {
   user: string;
+  email: string;
   isAdmin: boolean;
   workspace: WorkspaceInfo;
   listeningPorts: ListeningPort[];
   tier: WorkspaceTier;
 }): string {
-  const { user, isAdmin, workspace, listeningPorts, tier } = args;
+  const { user, email, isAdmin, workspace, listeningPorts, tier } = args;
   const status = workspace.status;
   const desktopEnabled = tier === 'desktop';
 
@@ -182,7 +183,7 @@ cross-user access is impossible.
   const body = `
 <section class="container">
   <h2>Hello, ${esc(user)}.</h2>
-  <p class="lead">Your personal Linux workspace.</p>
+  <p class="lead">Your personal Linux workspace. Signed in as <code>${esc(email)}</code> · <a href="/oauth2/sign_out?rd=/">sign out</a></p>
   <div class="dashboard-grid">
     <div class="dashboard-main">
       <div class="card">

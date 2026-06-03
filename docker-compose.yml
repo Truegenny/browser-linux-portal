@@ -34,6 +34,9 @@ services:
       # SITE_ADDRESS="box.example.com" → auto-HTTPS via Let's Encrypt.
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
       ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
+      # Used by the Caddyfile to gate /admin/term/<target>/* and similar
+      # admin-only paths on the Entra group OID forwarded by oauth2-proxy.
+      ADMIN_GROUP_OID: ${ADMIN_GROUP_OID}
     volumes:
       # Bind-mount the whole caddy/ directory (not individual files) — this
       # avoids Docker auto-creating empty directories when a single-file
@@ -49,6 +52,49 @@ services:
       - workspace-net
     depends_on:
       - portal
+      - oauth2-proxy
+
+  # ---------------------------------------------------------------------
+  # oauth2-proxy — Entra ID OIDC. Stateless; cookie-only sessions.
+  # ---------------------------------------------------------------------
+  # Sits behind Caddy. Caddy uses forward_auth against /oauth2/auth to
+  # validate the session cookie on every request, and full-proxies the
+  # /oauth2/* paths so the login/callback/sign_out flow works.
+  #
+  # We're in "reverse proxy" mode (--reverse-proxy=true) so trust of
+  # X-Forwarded-* headers comes from Caddy. The "upstream" is a no-op
+  # because forward_auth doesn't actually fetch through it.
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    container_name: oauth2-proxy
+    restart: unless-stopped
+    command:
+      - --http-address=0.0.0.0:4180
+      - --provider=oidc
+      - --oidc-issuer-url=https://login.microsoftonline.com/${OIDC_TENANT_ID}/v2.0
+      - --client-id=${OIDC_CLIENT_ID}
+      - --client-secret=${OIDC_CLIENT_SECRET}
+      - --cookie-secret=${OAUTH2_PROXY_COOKIE_SECRET}
+      - --cookie-secure=true
+      - --cookie-domain=${SITE_ADDRESS}
+      - --cookie-samesite=lax
+      - --cookie-expire=8h
+      - --email-domains=${OAUTH2_PROXY_EMAIL_DOMAINS:-*}
+      - --redirect-url=https://${SITE_ADDRESS}/oauth2/callback
+      - --reverse-proxy=true
+      - --whitelist-domain=${SITE_ADDRESS}
+      - --set-xauthrequest=true
+      - --pass-access-token=false
+      - --pass-authorization-header=false
+      - --skip-provider-button=true
+      - --oidc-groups-claim=groups
+      - --scope=openid email profile
+      # No actual upstream — forward_auth mode. The static://200 keeps
+      # oauth2-proxy happy even though Caddy never proxies traffic
+      # *through* it (only auth subrequests + the /oauth2/* paths).
+      - --upstream=static://200
+    networks:
+      - portal-net
 
   portal:
     image: browser-linux-portal-portal:latest
@@ -66,14 +112,19 @@ services:
       WORKSPACE_MEMORY_DESKTOP: ${WORKSPACE_MEMORY_DESKTOP:-3g}
       WORKSPACE_CPUS: ${WORKSPACE_CPUS:-1.5}
       WORKSPACE_IDLE_HOURS: ${WORKSPACE_IDLE_HOURS:-2}
-      ADMIN_USERS: ${ADMIN_USERS:-admin}
-      DOMAIN: ${DOMAIN:-localhost}
+      # Bootstrap admin allowlist (emails). The canonical signal is the
+      # Entra groups claim — see ADMIN_GROUP_OID — but this env is the
+      # fallback for first sign-in before the group is wired up.
+      ADMIN_USERS: ${ADMIN_USERS}
+      ADMIN_GROUP_OID: ${ADMIN_GROUP_OID}
+      DOMAIN: ${SITE_ADDRESS}
     volumes:
       # Portal needs Docker socket access to create/start/stop user containers.
       - /var/run/docker.sock:/var/run/docker.sock
       - caddy-logs:/var/log/caddy:ro
-      # Portal reads/writes users.users + admins.users so admins can manage
-      # users from the UI. Same files Caddy reads from /etc/caddy/.
+      # Portal reads/writes desktop.users to track which users have the
+      # GUI tier enabled. The bcrypt users.users / admins.users files are
+      # gone in this version — identity comes from Entra.
       - ./caddy:/caddy:rw
     networks:
       - portal-net

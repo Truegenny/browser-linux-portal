@@ -81,26 +81,23 @@ export function renderAdmin(args: {
 }
 
 // ---------------------------------------------------------------------------
-// Users
+// Users — tier management only (identity is owned by Entra)
 // ---------------------------------------------------------------------------
 export function renderAdminUsers(args: {
   user: string;
-  users: { username: string; isAdmin: boolean; tier: WorkspaceTier }[];
-  message: string | null;
-  error: string | null;
+  users: { username: string; tier: WorkspaceTier; hasWorkspace: boolean }[];
 }): string {
-  const { user, users, message, error } = args;
+  const { user, users } = args;
 
   const rows = users.map((u) => {
     const isSelf = u.username === user;
-    const adminBadge = u.isAdmin
-      ? '<span class="role">admin</span>'
-      : '<span class="muted small">—</span>';
-
     const tierBadge =
       u.tier === 'desktop'
         ? '<span class="role" title="GUI enabled — 3 GB RAM">desktop</span>'
         : '<span class="muted small" title="ttyd + files only — 2 GB RAM">terminal</span>';
+    const wsBadge = u.hasWorkspace
+      ? '<span class="badge st-running" title="Container exists for this user">yes</span>'
+      : '<span class="muted small" title="No container yet — user hasn’t signed in or hasn’t clicked Create">—</span>';
 
     const desktopToggle =
       u.tier === 'desktop'
@@ -111,82 +108,30 @@ export function renderAdminUsers(args: {
              <button title="Enable GUI on next workspace restart.">Enable desktop</button>
            </form>`;
 
-    const demoteAttr = isSelf
-      ? 'disabled title="You cannot demote yourself."'
-      : '';
-    const promoteOrDemote = u.isAdmin
-      ? `<form method="post" action="/admin/users/${esc(u.username)}/demote" style="display:inline">
-           <button ${demoteAttr}>Demote</button>
-         </form>`
-      : `<form method="post" action="/admin/users/${esc(u.username)}/promote" style="display:inline">
-           <button>Promote to admin</button>
-         </form>`;
-
-    const deleteForm = isSelf
-      ? '<button disabled title="You cannot delete yourself.">Delete</button>'
-      : `<form method="post" action="/admin/users/${esc(u.username)}/delete" style="display:inline"
-              onsubmit="return confirm('Delete user ${esc(u.username)}? Workspace data is preserved unless you check the wipe box.');">
-           <label style="font-size:11px;color:#8a929e;display:inline-flex;align-items:center;gap:3px;margin-right:4px">
-             <input type="checkbox" name="wipe_workspace"> wipe workspace
-           </label>
-           <button>Delete</button>
-         </form>`;
-
     return `<tr>
       <td><code>${esc(u.username)}</code>${isSelf ? ' <span class="small muted">(you)</span>' : ''}</td>
-      <td>${adminBadge}</td>
       <td>${tierBadge}</td>
-      <td class="actions">${desktopToggle} ${promoteOrDemote} ${deleteForm}</td>
+      <td>${wsBadge}</td>
+      <td class="actions">${desktopToggle}</td>
     </tr>`;
   }).join('');
 
   const emptyRow = users.length === 0
-    ? `<tr><td colspan="4" class="muted">No users yet. Add one below.</td></tr>`
-    : '';
-
-  const banner = error
-    ? `<p class="banner banner-error">${esc(error)}</p>`
-    : message
-    ? `<p class="banner banner-ok">${esc(message)}</p>`
+    ? `<tr><td colspan="4" class="muted">No users discovered yet. Users appear here the first time they sign in via Entra and click "Create my workspace" on /app.</td></tr>`
     : '';
 
   const body = `
 <section class="container">
   <h2>Admin</h2>
-  <p class="lead">Manual user management. <strong>Temporary</strong> — gone in v1.5 when Entra SSO replaces basic auth.</p>
+  <p class="lead">User tiers. Identity itself is managed in Entra ID — promote/demote admins by adjusting the Entra group, not here.</p>
   ${adminSubnav('users')}
-  ${banner}
 
-  <h3 style="margin-top:24px">Existing users</h3>
-  <p class="muted small">Tier changes take effect on the next workspace restart — running containers keep their current tier until stopped and started again.</p>
+  <h3 style="margin-top:24px">Known users</h3>
+  <p class="muted small">Tier changes take effect on the next workspace restart — running containers keep their current tier until stopped and started again. Admin status comes from the Entra group OID configured in <code>ADMIN_GROUP_OID</code>; it isn’t toggleable per-user from this UI.</p>
   <table class="admin">
-    <thead><tr><th>Username</th><th>Role</th><th>Tier</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Username</th><th>Tier</th><th>Workspace</th><th>Actions</th></tr></thead>
     <tbody>${rows}${emptyRow}</tbody>
   </table>
-
-  <h3 style="margin-top:32px">Add or reset a user</h3>
-  <p class="muted small">If the username already exists, the password is reset. The admin and desktop checkboxes set the user's current state; leaving them unchecked drops the user back to non-admin / terminal-only.</p>
-  <form method="post" action="/admin/users/add" class="user-form">
-    <label>
-      <span>Username</span>
-      <input name="username" type="text" required pattern="[a-z0-9][a-z0-9_-]{0,30}"
-             placeholder="alice" autocomplete="off" autocapitalize="off">
-    </label>
-    <label>
-      <span>Password</span>
-      <input name="password" type="password" required minlength="8"
-             placeholder="at least 8 characters" autocomplete="new-password">
-    </label>
-    <label class="checkbox">
-      <input name="is_admin" type="checkbox">
-      <span>grant admin role</span>
-    </label>
-    <label class="checkbox">
-      <input name="enable_desktop" type="checkbox">
-      <span>enable desktop GUI (3 GB RAM instead of 2 GB)</span>
-    </label>
-    <button class="cta">Save user</button>
-  </form>
 </section>`;
   return layout('Admin — Users', body, { user, isAdmin: true, active: 'admin' });
 }
