@@ -81,6 +81,49 @@ oauth2-proxy falls back to calling Microsoft Graph. The stack still
 works but you'll need to grant `GroupMember.Read.All` API permission
 with admin consent. For most setups this is irrelevant — skip it.
 
+### API permissions
+
+App registration → **API permissions**. The app needs exactly four
+delegated Microsoft Graph permissions — all low-risk OIDC primitives,
+nothing in `.All` territory:
+
+| Permission | Type | Why |
+|---|---|---|
+| `openid` | Delegated | OIDC sign-in primitive |
+| `profile` | Delegated | Name claim |
+| `email` | Delegated | Email claim — drives the workspace slug |
+| `User.Read` | Delegated | Sign in and read user profile (added by default on new app registrations) |
+
+`User.Read` is in the table by default for new apps. `email` was added
+automatically when you accepted the prompt while configuring the email
+optional claim above. If you skipped that prompt, add it now via
+**Add a permission → Microsoft Graph → Delegated permissions → OpenId
+permissions** and check `email`, `openid`, `profile`.
+
+Then click **Grant admin consent for Ntiva** at the top of the table.
+This skips the user-side consent dialog on first sign-in — everyone
+just lands in the app.
+
+The completed table should read:
+
+```
+Microsoft Graph (4)
+  email      Delegated  View users' email address       ✓ Granted for Ntiva
+  openid     Delegated  Sign users in                   ✓ Granted for Ntiva
+  profile    Delegated  View users' basic profile       ✓ Granted for Ntiva
+  User.Read  Delegated  Sign in and read user profile   ✓ Granted for Ntiva
+```
+
+If any row shows "Not granted" or a warning icon, click **Grant admin
+consent** again. If you see `User.Read.All`, `Directory.Read.All`, or
+anything else ending in `.All` — remove it. The stack doesn't need
+any of those.
+
+While you're in the app registration, also check **Authentication →
+Implicit grant and hybrid flows**: both "Access tokens" and "ID tokens"
+should be **unchecked**. We use the authorization code flow with PKCE,
+not implicit.
+
 ## 5. Create the admin group (or pick an existing one)
 
 Entra → **Groups → New group**.
