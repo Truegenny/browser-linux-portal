@@ -9,8 +9,9 @@ export function renderDashboard(args: {
   workspace: WorkspaceInfo;
   listeningPorts: ListeningPort[];
   tier: WorkspaceTier;
+  sharedPorts: Set<number>;
 }): string {
-  const { user, email, isAdmin, workspace, listeningPorts, tier } = args;
+  const { user, email, isAdmin, workspace, listeningPorts, tier, sharedPorts } = args;
   const status = workspace.status;
   const desktopEnabled = tier === 'desktop';
 
@@ -138,6 +139,7 @@ cross-user access is impossible.
       const desktopUrl = `/u/${esc(user)}/desktop/`;
       let label: string;
       let body: string;
+      let share = '';
       if (isTtyd) {
         label = '<span class="port-tag tag-terminal">terminal</span>';
         body = `<code>${p.port}</code>`;
@@ -148,13 +150,34 @@ cross-user access is impossible.
         label = '<span class="port-tag tag-desktop">desktop</span>';
         body = `<a href="${desktopUrl}" target="_blank" rel="noopener"><code>${p.port}</code></a>`;
       } else if (p.reachable) {
+        // Webapp — eligible for sharing. Built-in ports (terminal/files/
+        // desktop) are not shareable; sharing is for user-launched servers.
         label = '<span class="port-tag tag-webapp">webapp</span>';
         body = `<a href="${webappUrl}" target="_blank" rel="noopener"><code>${p.port}</code></a>`;
+        const isShared = sharedPorts.has(p.port);
+        const shareUrl = `/shared/${esc(user)}/p/${p.port}/`;
+        if (isShared) {
+          share = `
+            <div class="port-share">
+              <span class="port-tag tag-shared" title="Reachable to any signed-in Ntiva user at ${shareUrl}">shared</span>
+              <form method="post" action="/api/share/${p.port}" style="display:inline">
+                <input type="hidden" name="share" value="off">
+                <button class="btn-ghost" title="Stop sharing">Unshare</button>
+              </form>
+              <a class="port-share-link" href="${shareUrl}" target="_blank" rel="noopener" title="Open shared URL"><code>${shareUrl}</code></a>
+            </div>`;
+        } else {
+          share = `
+            <form method="post" action="/api/share/${p.port}" style="display:inline">
+              <input type="hidden" name="share" value="on">
+              <button class="btn-ghost" title="Make /shared/${esc(user)}/p/${p.port}/ reachable to any signed-in Ntiva user">Share</button>
+            </form>`;
+        }
       } else {
         label = '<span class="port-tag tag-loopback">loopback</span>';
         body = `<code title="Bound to ${esc(p.address)}; rebind 0.0.0.0 to expose">${p.port}</code>`;
       }
-      return `<li class="port-row">${body}${label}</li>`;
+      return `<li class="port-row">${body}${label}${share}</li>`;
     })
     .join('');
 

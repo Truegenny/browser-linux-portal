@@ -17,6 +17,8 @@ import {
   workspaceStats,
   listListeningPorts,
   getContainerLogs,
+  listContainerDir,
+  readContainerFile,
 } from './lib/dockerctl.js';
 import {
   setUserTier,
@@ -24,6 +26,9 @@ import {
   listDesktopUsers,
   listExtraAdminEmails,
   setExtraAdmin,
+  listSharedPorts,
+  isShared,
+  setShared,
   USERNAME_RE,
 } from './lib/users.js';
 import { renderMarketing, renderSignedOut } from './views/marketing.js';
@@ -34,6 +39,7 @@ import {
   renderAdminUsers,
   renderAdminPorts,
   renderAdminUserLogs,
+  renderAdminFiles,
 } from './views/admin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -90,14 +96,18 @@ app.get('/robots.txt', async (_req, reply) => {
 app.get('/app', async (req, reply) => {
   const u = await requireUser(req, reply);
   if (!u) return;
-  const [ws, tier] = await Promise.all([
+  const [ws, tier, allShared] = await Promise.all([
     getWorkspace(u.username),
     getUserTier(u.username),
+    listSharedPorts(),
   ]);
   const listeningPorts =
     ws.status === 'running'
       ? await listListeningPorts(u.username).catch(() => [])
       : [];
+  const sharedPortsSet = new Set(
+    allShared.filter((s) => s.sharer === u.username).map((s) => s.port),
+  );
   reply.type('text/html').send(
     renderDashboard({
       user: u.username,
@@ -106,6 +116,7 @@ app.get('/app', async (req, reply) => {
       workspace: ws,
       listeningPorts,
       tier,
+      sharedPorts: sharedPortsSet,
     }),
   );
 });
@@ -357,6 +368,112 @@ app.post('/admin/users/revoke-admin', async (req, reply) => {
   }
   await setExtraAdmin(email, false);
   reply.redirect('/admin/users');
+});
+
+// ---------------------------------------------------------------------------
+// Admin — cross-user file viewer (Docker exec, read-only)
+// ---------------------------------------------------------------------------
+// Filebrowser can't be reached cross-user because it bakes /u/<self>/files
+// into the URLs it serves, so we use the Docker socket to list directories
+// and stream files. Sandboxed to /home/node — the same volume regular
+// filebrowser exposes — and admin-gated.
+app.get('/admin/files/:user', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const target = (req.params as { user: string }).user;
+  if (!USERNAME_RE.test(target)) {
+    reply.code(400).type('text/plain').send('Invalid username.');
+    return;
+  }
+  const dirPath = ((req.query as { path?: string }).path ?? '/home/node').trim();
+  let entries: Array<{ name: string; isDir: boolean; size: number; mtime: string }> = [];
+  let error: string | null = null;
+  try {
+    entries = await listContainerDir(target, dirPath);
+  } catch (e: any) {
+    error = e?.message ?? String(e);
+  }
+  const ws = await getWorkspace(target);
+  reply.type('text/html').send(
+    renderAdminFiles({
+      user: u.username,
+      target,
+      workspace: ws,
+      path: dirPath,
+      entries,
+      error,
+    }),
+  );
+});
+
+app.get('/admin/files/:user/download', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const target = (req.params as { user: string }).user;
+  if (!USERNAME_RE.test(target)) {
+    reply.code(400).type('text/plain').send('Invalid username.');
+    return;
+  }
+  const filePath = ((req.query as { path?: string }).path ?? '').trim();
+  if (!filePath) {
+    reply.code(400).type('text/plain').send('Missing path.');
+    return;
+  }
+  try {
+    const { data, truncated } = await readContainerFile(target, filePath);
+    const basename = filePath.split('/').pop() || 'file';
+    reply
+      .header('Content-Type', 'application/octet-stream')
+      .header(
+        'Content-Disposition',
+        `attachment; filename="${basename.replace(/"/g, '')}"`,
+      );
+    if (truncated) reply.header('X-File-Truncated', 'true');
+    reply.send(data);
+  } catch (e: any) {
+    reply.code(400).type('text/plain').send(`Failed: ${e?.message ?? e}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Webapp sharing — per-user toggle from the dashboard sidebar.
+// ---------------------------------------------------------------------------
+app.post('/api/share/:port', async (req, reply) => {
+  const u = await requireUser(req, reply);
+  if (!u) return;
+  const port = parseInt((req.params as { port: string }).port, 10);
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    reply.code(400).type('text/plain').send('Invalid port.');
+    return;
+  }
+  const body = (req.body ?? {}) as { share?: string };
+  // Toggle: empty/false = revoke, anything truthy = share.
+  const shouldShare = body.share === 'on' || body.share === '1' || body.share === 'true';
+  await setShared(u.username, port, shouldShare);
+  reply.redirect('/app');
+});
+
+// ---------------------------------------------------------------------------
+// Internal — share check endpoint for Caddy's forward_auth subrequest.
+// ---------------------------------------------------------------------------
+// Caddy hits this before proxying /shared/<sharer>/p/<port>/. Auth is
+// already required (any signed-in user passes the outer forward_auth),
+// so we just confirm the requested (sharer, port) is in shared.ports.
+app.get('/internal/check-shared', async (req, reply) => {
+  // Outer forward_auth already verified the requester is signed in.
+  const u = await getUser(req);
+  if (!u) {
+    reply.code(403).type('text/plain').send('not authenticated');
+    return;
+  }
+  const sharer = String(req.headers['x-share-sharer'] ?? '').toLowerCase();
+  const port = parseInt(String(req.headers['x-share-port'] ?? ''), 10);
+  if (!sharer || !Number.isFinite(port)) {
+    reply.code(400).type('text/plain').send('missing share params');
+    return;
+  }
+  const ok = await isShared(sharer, port);
+  reply.code(ok ? 200 : 403).type('text/plain').send(ok ? 'shared' : 'not shared');
 });
 
 // ---------------------------------------------------------------------------

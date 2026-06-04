@@ -1,0 +1,8 @@
+# Webapp sharing. Managed by the /app dashboard share toggles.
+# Format: <sharer-slug>:<port> per line. Caddy never reads this file —
+# /internal/check-shared on the portal answers Caddy via forward_auth
+# when a request arrives at /shared/<sharer>/p/<port>/.
+#
+# Example (delete this file once the portal has written to it):
+# justin.cronin:8080
+# alice.smith:3000

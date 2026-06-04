@@ -104,11 +104,56 @@
 			reverse_proxy ws-{http.regexp.admport.1}:{http.regexp.admport.2}
 		}
 
+		# Desktop bare URL → noVNC bootstrap redirect with admin-prefixed
+		# ?path so the WebSocket connects through /admin/term/<target>/...
+		# (KasmVNC v1.3.3 has no subpath support; this is the same trick the
+		# user-side /u/<self>/desktop/ block uses, with the admin prefix.)
+		@adm_desktop_root path_regexp admdskroot ^/([a-z0-9][a-z0-9._-]{0,40})/desktop/?$
+		handle @adm_desktop_root {
+			redir * /admin/term/{http.regexp.admdskroot.1}/desktop/index.html?path=admin/term/{http.regexp.admdskroot.1}/desktop/websockify 302
+		}
+
+		# Desktop assets + websockify: /admin/term/<target>/desktop/<rest>
+		# → ws-<target>:7683/<rest>. KasmVNC speaks HTTPS-only (snakeoil
+		# cert); the tls_insecure_skip_verify is safe because the connection
+		# is inside workspace-net.
+		@adm_desktop path_regexp admdesk ^/([a-z0-9][a-z0-9._-]{0,40})/desktop(/.*)?$
+		handle @adm_desktop {
+			rewrite * {http.regexp.admdesk.2}
+			reverse_proxy ws-{http.regexp.admdesk.1}:7683 {
+				transport http {
+					tls
+					tls_insecure_skip_verify
+				}
+			}
+		}
+
 		# Default: terminal (ttyd) at /admin/term/<target>/<rest>.
 		@adm_term path_regexp admterm ^/([a-z0-9][a-z0-9._-]{0,40})(/.*)?$
 		handle @adm_term {
 			rewrite * {http.regexp.admterm.2}
 			reverse_proxy ws-{http.regexp.admterm.1}:7681
+		}
+		respond 404
+	}
+
+	# ----- SHARED WEBAPPS: /shared/<sharer>/p/<port>/ ----------------------
+	# A sharer toggles a webapp port shareable from their dashboard. Any
+	# signed-in user (outer forward_auth already validated the session)
+	# can hit the shared URL. Caddy still checks per-request via a
+	# forward_auth subrequest to the portal's /internal/check-shared,
+	# which validates that (sharer, port) is actually in shared.ports.
+	handle_path /shared/* {
+		@shared path_regexp shr ^/([a-z0-9][a-z0-9._-]{0,40})/p/(\d+)(/.*)?$
+		handle @shared {
+			forward_auth portal:3000 {
+				uri /internal/check-shared
+				header_up X-Auth-User {http.request.header.X-Auth-Request-Email}
+				header_up X-Share-Sharer {http.regexp.shr.1}
+				header_up X-Share-Port {http.regexp.shr.2}
+			}
+			rewrite * {http.regexp.shr.3}
+			reverse_proxy ws-{http.regexp.shr.1}:{http.regexp.shr.2}
 		}
 		respond 404
 	}

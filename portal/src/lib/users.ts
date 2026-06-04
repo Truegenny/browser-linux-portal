@@ -19,6 +19,7 @@ import path from 'node:path';
 const CADDY_DIR = '/caddy';
 const DESKTOP_FILE = path.join(CADDY_DIR, 'desktop.users');
 const ADMINS_FILE = path.join(CADDY_DIR, 'admins.users');
+const SHARED_FILE = path.join(CADDY_DIR, 'shared.ports');
 
 export type WorkspaceTier = 'terminal' | 'desktop';
 
@@ -108,6 +109,63 @@ export async function listExtraAdminEmails(): Promise<string[]> {
 export async function isExtraAdmin(email: string): Promise<boolean> {
   const list = await listExtraAdminEmails();
   return list.includes(normalizeEmail(email));
+}
+
+// ---------------------------------------------------------------------------
+// shared.ports — webapp ports that users have opted to expose to any other
+// signed-in user via /shared/<sharer>/p/<port>/. Format: <sharer>:<port>
+// per line. Caddy doesn't read this file; the portal's
+// /internal/check-shared endpoint validates each request via Caddy's
+// forward_auth subrequest.
+// ---------------------------------------------------------------------------
+export interface SharedPort {
+  sharer: string;
+  port: number;
+}
+
+export async function listSharedPorts(): Promise<SharedPort[]> {
+  const raw = await readPlainList(SHARED_FILE);
+  const out: SharedPort[] = [];
+  for (const line of raw) {
+    const sep = line.indexOf(':');
+    if (sep < 1) continue;
+    const sharer = line.slice(0, sep).trim().toLowerCase();
+    const port = parseInt(line.slice(sep + 1).trim(), 10);
+    if (!isValidUsername(sharer) || !Number.isFinite(port) || port <= 0 || port > 65535) continue;
+    out.push({ sharer, port });
+  }
+  return out;
+}
+
+export async function isShared(sharer: string, port: number): Promise<boolean> {
+  const list = await listSharedPorts();
+  return list.some((s) => s.sharer === sharer.toLowerCase() && s.port === port);
+}
+
+export async function setShared(
+  sharer: string,
+  port: number,
+  shared: boolean,
+): Promise<void> {
+  if (!isValidUsername(sharer)) throw new Error('Invalid sharer');
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    throw new Error('Invalid port');
+  }
+  const list = await listSharedPorts();
+  const filtered = list.filter(
+    (s) => !(s.sharer === sharer && s.port === port),
+  );
+  if (shared) filtered.push({ sharer, port });
+  const header =
+    '# Webapp sharing. Managed by the /app dashboard share toggles.\n' +
+    '# Format: <sharer>:<port> per line. Caddy never reads this file —\n' +
+    '# /internal/check-shared on the portal answers Caddy via forward_auth.\n';
+  const body = Array.from(
+    new Set(filtered.map((s) => `${s.sharer}:${s.port}`)),
+  )
+    .sort()
+    .join('\n');
+  await fs.writeFile(SHARED_FILE, header + body + '\n', 'utf8');
 }
 
 export async function setExtraAdmin(

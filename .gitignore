@@ -13,3 +13,4 @@ portal/public/favicon.ico
 caddy/users.users
 caddy/admins.users
 caddy/desktop.users
+caddy/shared.ports

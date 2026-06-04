@@ -72,17 +72,29 @@ so a compromised workspace can't reach `portal:3000` and forge headers.
    we proved the alternative — CEL expression matchers and placeholder
    substitution in `path_regexp` patterns — is fragile.
 
-   **Exception**: `/admin/term/<target>/...` (and only that path) routes
-   by URL slot to `ws-<target>:7681` (terminal) or `ws-<target>:<port>`
-   (webapps, via `/admin/term/<target>/p/<port>/`). Gated in Caddy by a
-   `forward_auth` subrequest to the portal's `/internal/check-admin`,
-   which unions three signals: Entra group OID, `admins.users` file,
-   and `ADMIN_USERS` env — any one makes the requester admin.
-   Filebrowser/KasmVNC are NOT admin-accessible cross-user — they bake
-   `/u/<self>/...` into their own served URLs and don't compose with a
-   different prefix. If you need to inspect another user's files, open
-   `/admin/term/<target>/` and use the shell (`cat`, `ls`, `tar`,
-   `scp`, etc.); for graphical desktop access, log in as them.
+   **Exception 1 — admin paths**: `/admin/term/<target>/...` routes by
+   URL slot, with the variant suffixes for service: bare → terminal,
+   `/p/<port>/` → webapp port, `/desktop/...` → KasmVNC (mirrors the
+   user-side redirect-with-`?path=` trick for the noVNC client).
+   Gated in Caddy by a `forward_auth` subrequest to the portal's
+   `/internal/check-admin`, which unions three signals: Entra group
+   OID, `admins.users` file, and `ADMIN_USERS` env — any one makes the
+   requester admin.
+
+   File browsing cross-user is NOT served by filebrowser (its baked-in
+   `--baseurl` doesn't compose with a different prefix). Instead the
+   portal renders `/admin/files/<target>/` itself, using `docker exec
+   ls`/`head` to read the workspace's `/home/node`. Read-only,
+   download-only — uploads happen via the admin terminal (e.g.
+   `cat > foo` over the shared PTY).
+
+   **Exception 2 — shared webapps**: `/shared/<sharer>/p/<port>/...`
+   routes by URL slot to `ws-<sharer>:<port>`. Authenticated (any
+   signed-in user passes the outer forward_auth) but no admin
+   requirement. Gated by a `forward_auth` to the portal's
+   `/internal/check-shared` which validates the `(sharer, port)` pair
+   against `caddy/shared.ports` — a sharer-managed list set from the
+   dashboard's port sidebar.
 
 2. **Workspace ports must bind `0.0.0.0`** to be reachable through the
    proxy. `127.0.0.1` works inside the container but is unreachable from
@@ -141,6 +153,27 @@ docs/
   DEPLOY.md            — Ubuntu/Azure deploy runbook (start here)
   SSO.md               — Entra ID app-registration + claims walkthrough
 ```
+
+## Webapp sharing
+
+Users toggle a `Share` button next to any webapp port on their dashboard.
+The portal records the `(sharer, port)` pair in `caddy/shared.ports`
+(gitignored) and constructs a public-within-tenant URL
+`/shared/<sharer>/p/<port>/` that any signed-in user can visit. Auth
+still applies (Entra-via-oauth2-proxy) — sharing only lifts the
+"workspace identity must match auth identity" routing constraint, not
+the "must be signed in" gate.
+
+Implementation:
+- `lib/users.ts` — `listSharedPorts` / `isShared` / `setShared` helpers
+- `POST /api/share/:port` — dashboard toggle (sharer's own request)
+- `GET /internal/check-shared` — Caddy `forward_auth` subrequest, reads
+  `X-Share-Sharer` and `X-Share-Port` headers Caddy sets from the URL
+  capture groups, returns 200/403
+
+Unsharing is the same endpoint with `share=off`. The sharer's session is
+the source of truth — they can revoke any time. The shared port appears
+as `shared` (with the URL and an unshare button) in the sidebar.
 
 ## Admin status — three sources, unioned
 

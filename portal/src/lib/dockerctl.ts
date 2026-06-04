@@ -10,6 +10,7 @@
 // and avoid a database in v0.
 
 import Docker from 'dockerode';
+import { posix as posixPath } from 'node:path';
 import { config, parseMemory } from './config.js';
 import { USERNAME_RE, type WorkspaceTier } from './users.js';
 
@@ -308,6 +309,7 @@ async function execAndCapture(
 
 // Docker exec with no Tty multiplexes stdout/stderr into 8-byte-header chunks.
 // Each chunk: [stream_id (1B), 0, 0, 0, length (4B BE), payload (length B)].
+// stream_id: 1 = stdout, 2 = stderr.
 function demuxDockerStream(buf: Buffer): string {
   let out = '';
   let i = 0;
@@ -318,6 +320,22 @@ function demuxDockerStream(buf: Buffer): string {
     i = end;
   }
   return out;
+}
+
+// Same as demuxDockerStream but returns only stdout chunks as a Buffer.
+// Important for binary file reads where mixing stderr text would corrupt
+// the payload.
+function demuxStdoutBuffer(buf: Buffer): Buffer {
+  const parts: Buffer[] = [];
+  let i = 0;
+  while (i + 8 <= buf.length) {
+    const streamId = buf[i];
+    const len = buf.readUInt32BE(i + 4);
+    const end = Math.min(i + 8 + len, buf.length);
+    if (streamId === 1) parts.push(buf.subarray(i + 8, end));
+    i = end;
+  }
+  return Buffer.concat(parts);
 }
 
 function parseSsListenLines(text: string, user: string): ListeningPort[] {
@@ -374,6 +392,106 @@ export async function getContainerLogs(
     );
   });
   return demuxDockerStream(buf);
+}
+
+// ---------------------------------------------------------------------------
+// File browser via Docker exec.
+// ---------------------------------------------------------------------------
+// Cross-user filebrowser doesn't compose with filebrowser's baked-in
+// --baseurl, so for admin file viewing we use the Docker socket directly:
+// `docker exec ls` for directory listings, `docker exec cat` for file
+// contents. Read-only, sandboxed to /home/node so admins can't fish around
+// the rest of the container's filesystem.
+
+export interface DirEntry {
+  name: string;
+  isDir: boolean;
+  size: number;
+  mtime: string;
+}
+
+// Constrain to the user's home dir. node:posix-paths to normalize, then a
+// startsWith check after — defends against ".." traversal in the input.
+function sandboxPath(input: string, root: string = '/home/node'): string {
+  const normalized = posixPath.normalize(input || root);
+  if (normalized !== root && !normalized.startsWith(root + '/')) {
+    throw new Error(`Path must be under ${root}`);
+  }
+  return normalized;
+}
+
+export async function listContainerDir(
+  user: string,
+  dirPath: string,
+): Promise<DirEntry[]> {
+  const safePath = sandboxPath(dirPath);
+  const { container: cName } = names(user);
+  const ins = await inspectContainerSafe(cName);
+  if (!ins || !ins.State.Running) return [];
+
+  // ls flags chosen for parseability: -la for hidden+long, --time-style
+  // for predictable timestamps, -- to terminate flag parsing so paths
+  // can never be interpreted as options.
+  const raw = await execAndCapture(cName, [
+    'ls',
+    '-la',
+    '--time-style=+%Y-%m-%d %H:%M',
+    '--',
+    safePath,
+  ]);
+  const text = demuxDockerStream(raw);
+  const entries: DirEntry[] = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim() || line.startsWith('total ')) continue;
+    // perms links owner group size YYYY-MM-DD HH:MM name
+    const m = line.match(
+      /^([d-])[rwxsStT-]{9}[\.\+]?\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s+(.+)$/,
+    );
+    if (!m) continue;
+    const [, dirChar, sizeStr, mtime, name] = m;
+    if (name === '.' || name === '..') continue;
+    entries.push({
+      name,
+      isDir: dirChar === 'd',
+      size: parseInt(sizeStr, 10),
+      mtime,
+    });
+  }
+  return entries.sort((a, b) => {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+// Read a file's bytes via `cat`. Caller decides what to do with the buffer
+// (download stream, text preview, etc.). Hard-caps the size to avoid
+// loading huge files into memory.
+export async function readContainerFile(
+  user: string,
+  filePath: string,
+  maxBytes: number = 25 * 1024 * 1024,
+): Promise<{ data: Buffer; truncated: boolean }> {
+  const safePath = sandboxPath(filePath);
+  const { container: cName } = names(user);
+  const ins = await inspectContainerSafe(cName);
+  if (!ins || !ins.State.Running) {
+    throw new Error('container not running');
+  }
+  // Use `head -c <N+1>` so we can detect truncation without slurping the
+  // whole file. +1 because if we read exactly maxBytes we don't know if
+  // there's more.
+  const raw = await execAndCapture(cName, [
+    'head',
+    '-c',
+    String(maxBytes + 1),
+    '--',
+    safePath,
+  ]);
+  const data = demuxStdoutBuffer(raw);
+  if (data.length > maxBytes) {
+    return { data: data.subarray(0, maxBytes), truncated: true };
+  }
+  return { data, truncated: false };
 }
 
 export async function workspaceStats(
