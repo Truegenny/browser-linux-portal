@@ -448,7 +448,11 @@ export async function listContainerDir(
       /^([d-])[rwxsStT-]{9}[\.\+]?\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s+(.+)$/,
     );
     if (!m) continue;
-    const [, dirChar, sizeStr, mtime, name] = m;
+    const dirChar = m[1];
+    const sizeStr = m[2];
+    const mtime = m[3];
+    const name = m[4];
+    if (!dirChar || !sizeStr || !mtime || !name) continue;
     if (name === '.' || name === '..') continue;
     entries.push({
       name,
