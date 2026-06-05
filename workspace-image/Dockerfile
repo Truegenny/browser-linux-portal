@@ -162,7 +162,14 @@ RUN chmod 644 "$FB_DB"
 # 4) Claude Code.
 RUN set -eux; \
     npm install -g @anthropic-ai/claude-code; \
-    claude --version || true
+    claude --version || true; \
+    # Make /usr/local writable by the node user so claude-code's built-in
+    # auto-updater can write the new tarball without "no write permission
+    # to npm prefix" nagging on every terminal launch. Owning the whole
+    # npm prefix is fine here — node is the only runtime user in this
+    # container, and the global package set is just claude-code itself
+    # (everything else uses the per-user $HOME/.npm install path).
+    chown -R node:node /usr/local/lib/node_modules /usr/local/bin
 
 # 5) Passwordless sudo for the existing `node` user.
 RUN set -eux; \
