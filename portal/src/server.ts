@@ -29,6 +29,9 @@ import {
   listSharedPorts,
   isShared,
   setShared,
+  listSharingAllowed,
+  isSharingAllowed,
+  setSharingAllowed,
   USERNAME_RE,
 } from './lib/users.js';
 import { renderMarketing, renderSignedOut } from './views/marketing.js';
@@ -96,10 +99,11 @@ app.get('/robots.txt', async (_req, reply) => {
 app.get('/app', async (req, reply) => {
   const u = await requireUser(req, reply);
   if (!u) return;
-  const [ws, tier, allShared] = await Promise.all([
+  const [ws, tier, allShared, sharingAllowed] = await Promise.all([
     getWorkspace(u.username),
     getUserTier(u.username),
     listSharedPorts(),
+    isSharingAllowed(u.username),
   ]);
   const listeningPorts =
     ws.status === 'running'
@@ -117,6 +121,7 @@ app.get('/app', async (req, reply) => {
       listeningPorts,
       tier,
       sharedPorts: sharedPortsSet,
+      sharingAllowed,
     }),
   );
 });
@@ -280,14 +285,18 @@ app.get('/admin/logs/:user', async (req, reply) => {
 app.get('/admin/users', async (req, reply) => {
   const u = await requireAdmin(req, reply);
   if (!u) return;
-  const [workspaces, desktopUsers, extraAdmins] = await Promise.all([
-    listWorkspaces(),
-    listDesktopUsers(),
-    listExtraAdminEmails(),
-  ]);
+  const [workspaces, desktopUsers, extraAdmins, sharingUsers] =
+    await Promise.all([
+      listWorkspaces(),
+      listDesktopUsers(),
+      listExtraAdminEmails(),
+      listSharingAllowed(),
+    ]);
   const set = new Set<string>(workspaces.map((w) => w.user));
   desktopUsers.forEach((d) => set.add(d));
+  sharingUsers.forEach((s) => set.add(s));
   const desktopSet = new Set(desktopUsers);
+  const sharingSet = new Set(sharingUsers);
   const users = Array.from(set)
     .sort((a, b) => a.localeCompare(b))
     .map((username) => ({
@@ -296,6 +305,7 @@ app.get('/admin/users', async (req, reply) => {
         | 'desktop'
         | 'terminal',
       hasWorkspace: workspaces.some((w) => w.user === username),
+      sharingAllowed: sharingSet.has(username),
     }));
   reply.type('text/html').send(
     renderAdminUsers({
@@ -329,6 +339,34 @@ app.post('/admin/users/:target/disable-desktop', async (req, reply) => {
     return;
   }
   await setUserTier(target, 'terminal');
+  reply.redirect('/admin/users');
+});
+
+// Per-user webapp-sharing capability. Default-off; admin flips on to let
+// the user use the Share buttons in their own dashboard sidebar.
+// Disabling also wipes any existing shares for that user (handled inside
+// setSharingAllowed) so disable is an immediate kill-switch.
+app.post('/admin/users/:target/allow-sharing', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const target = (req.params as { target: string }).target;
+  if (!USERNAME_RE.test(target)) {
+    reply.code(400).type('text/plain').send('Invalid username.');
+    return;
+  }
+  await setSharingAllowed(target, true);
+  reply.redirect('/admin/users');
+});
+
+app.post('/admin/users/:target/disallow-sharing', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const target = (req.params as { target: string }).target;
+  if (!USERNAME_RE.test(target)) {
+    reply.code(400).type('text/plain').send('Invalid username.');
+    return;
+  }
+  await setSharingAllowed(target, false);
   reply.redirect('/admin/users');
 });
 
@@ -446,9 +484,22 @@ app.post('/api/share/:port', async (req, reply) => {
     reply.code(400).type('text/plain').send('Invalid port.');
     return;
   }
+  // Admin-gated capability — if the user isn't on the sharing allowlist,
+  // they can't share even if they POST directly. Unshare (share=off) is
+  // always allowed: anyone should be able to revoke their own shares,
+  // even after admin disables the capability.
   const body = (req.body ?? {}) as { share?: string };
-  // Toggle: empty/false = revoke, anything truthy = share.
   const shouldShare = body.share === 'on' || body.share === '1' || body.share === 'true';
+  if (shouldShare) {
+    const allowed = await isSharingAllowed(u.username);
+    if (!allowed) {
+      reply
+        .code(403)
+        .type('text/plain')
+        .send('Webapp sharing is not enabled for your workspace. Ask an admin.');
+      return;
+    }
+  }
   await setShared(u.username, port, shouldShare);
   reply.redirect('/app');
 });
@@ -472,7 +523,15 @@ app.get('/internal/check-shared', async (req, reply) => {
     reply.code(400).type('text/plain').send('missing share params');
     return;
   }
-  const ok = await isShared(sharer, port);
+  // Belt-and-braces: setSharingAllowed(slug, false) already wipes shares
+  // for that user, but re-checking the allowlist here means a stale
+  // shared.ports entry can never grant access if the user's capability
+  // has since been revoked.
+  const [shared, allowed] = await Promise.all([
+    isShared(sharer, port),
+    isSharingAllowed(sharer),
+  ]);
+  const ok = shared && allowed;
   reply.code(ok ? 200 : 403).type('text/plain').send(ok ? 'shared' : 'not shared');
 });
 

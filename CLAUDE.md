@@ -156,24 +156,35 @@ docs/
 
 ## Webapp sharing
 
-Users toggle a `Share` button next to any webapp port on their dashboard.
-The portal records the `(sharer, port)` pair in `caddy/shared.ports`
-(gitignored) and constructs a public-within-tenant URL
-`/shared/<sharer>/p/<port>/` that any signed-in user can visit. Auth
-still applies (Entra-via-oauth2-proxy) — sharing only lifts the
-"workspace identity must match auth identity" routing constraint, not
-the "must be signed in" gate.
+Two-layer model:
+
+**Layer 1 — admin capability gate (`caddy/sharing-allowed.users`).**
+Admin flips an `Allow sharing` toggle for a user from `/admin/users`.
+Default-off: a fresh user has no Share buttons visible until an admin
+grants the capability. Toggling off acts as a kill-switch — the
+portal wipes every entry in `shared.ports` for that user as part of
+`setSharingAllowed(slug, false)`.
+
+**Layer 2 — per-port user toggle (`caddy/shared.ports`).**
+A capability-granted user clicks `Share` on any webapp port from their
+dashboard sidebar. The portal records the `(sharer, port)` pair and
+surfaces the URL `/shared/<sharer>/p/<port>/` for any signed-in user
+to visit. Auth still applies — sharing only lifts the "workspace
+identity must match auth identity" routing constraint.
 
 Implementation:
-- `lib/users.ts` — `listSharedPorts` / `isShared` / `setShared` helpers
-- `POST /api/share/:port` — dashboard toggle (sharer's own request)
-- `GET /internal/check-shared` — Caddy `forward_auth` subrequest, reads
-  `X-Share-Sharer` and `X-Share-Port` headers Caddy sets from the URL
-  capture groups, returns 200/403
-
-Unsharing is the same endpoint with `share=off`. The sharer's session is
-the source of truth — they can revoke any time. The shared port appears
-as `shared` (with the URL and an unshare button) in the sidebar.
+- `lib/users.ts` — `listSharedPorts`/`isShared`/`setShared` for ports;
+  `listSharingAllowed`/`isSharingAllowed`/`setSharingAllowed` for the
+  capability gate (latter wipes ports on disable)
+- `POST /api/share/:port` — sharer's toggle. Verifies the user is
+  sharing-allowed before accepting `share=on`; always accepts
+  `share=off` so users can revoke their own state even post-revoke
+- `GET /internal/check-shared` — Caddy `forward_auth` subrequest.
+  Re-checks both layers (sharing-allowed AND in shared.ports) so a
+  stale `shared.ports` entry can never grant access if capability
+  was revoked
+- `POST /admin/users/:target/{allow,disallow}-sharing` — admin
+  toggles on `/admin/users`
 
 ## Admin status — three sources, unioned
 

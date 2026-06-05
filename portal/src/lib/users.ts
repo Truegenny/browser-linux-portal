@@ -20,6 +20,7 @@ const CADDY_DIR = '/caddy';
 const DESKTOP_FILE = path.join(CADDY_DIR, 'desktop.users');
 const ADMINS_FILE = path.join(CADDY_DIR, 'admins.users');
 const SHARED_FILE = path.join(CADDY_DIR, 'shared.ports');
+const SHARING_ALLOWED_FILE = path.join(CADDY_DIR, 'sharing-allowed.users');
 
 export type WorkspaceTier = 'terminal' | 'desktop';
 
@@ -142,6 +143,19 @@ export async function isShared(sharer: string, port: number): Promise<boolean> {
   return list.some((s) => s.sharer === sharer.toLowerCase() && s.port === port);
 }
 
+async function writeSharedFile(list: SharedPort[]): Promise<void> {
+  const header =
+    '# Webapp sharing. Managed by the /app dashboard share toggles.\n' +
+    '# Format: <sharer>:<port> per line. Caddy never reads this file —\n' +
+    '# /internal/check-shared on the portal answers Caddy via forward_auth.\n';
+  const body = Array.from(
+    new Set(list.map((s) => `${s.sharer}:${s.port}`)),
+  )
+    .sort()
+    .join('\n');
+  await fs.writeFile(SHARED_FILE, header + body + '\n', 'utf8');
+}
+
 export async function setShared(
   sharer: string,
   port: number,
@@ -156,16 +170,52 @@ export async function setShared(
     (s) => !(s.sharer === sharer && s.port === port),
   );
   if (shared) filtered.push({ sharer, port });
+  await writeSharedFile(filtered);
+}
+
+// ---------------------------------------------------------------------------
+// sharing-allowed.users — admin-managed allowlist of users who can use the
+// dashboard's per-port Share button. Default-off: a fresh user can run
+// webapps but can't expose them via /shared/<sharer>/p/<port>/ until an
+// admin grants the capability. Disallowing also revokes any existing shares
+// for that user, so disable acts as a kill-switch.
+// ---------------------------------------------------------------------------
+export async function listSharingAllowed(): Promise<string[]> {
+  return readPlainList(SHARING_ALLOWED_FILE);
+}
+
+export async function isSharingAllowed(slug: string): Promise<boolean> {
+  const list = await listSharingAllowed();
+  return list.includes(slug);
+}
+
+export async function setSharingAllowed(
+  slug: string,
+  allowed: boolean,
+): Promise<void> {
+  if (!isValidUsername(slug)) throw new Error('Invalid username');
+  const list = await listSharingAllowed();
+  const filtered = list.filter((u) => u !== slug);
+  if (allowed) filtered.push(slug);
   const header =
-    '# Webapp sharing. Managed by the /app dashboard share toggles.\n' +
-    '# Format: <sharer>:<port> per line. Caddy never reads this file —\n' +
-    '# /internal/check-shared on the portal answers Caddy via forward_auth.\n';
-  const body = Array.from(
-    new Set(filtered.map((s) => `${s.sharer}:${s.port}`)),
-  )
-    .sort()
+    '# Users allowed to share webapps from their dashboard. Managed by the\n' +
+    '# /admin/users UI. Default-off: a user not in this list sees no Share\n' +
+    '# buttons and their POSTs to /api/share/:port return 403.\n';
+  const body = Array.from(new Set(filtered))
+    .sort((a, b) => a.localeCompare(b))
     .join('\n');
-  await fs.writeFile(SHARED_FILE, header + body + '\n', 'utf8');
+  await fs.writeFile(SHARING_ALLOWED_FILE, header + body + '\n', 'utf8');
+
+  // When disallowing, also wipe any existing share entries for this user
+  // so an admin's "disable sharing" acts as an immediate kill-switch on
+  // any currently-live share URLs.
+  if (!allowed) {
+    const shared = await listSharedPorts();
+    const cleaned = shared.filter((s) => s.sharer !== slug);
+    if (cleaned.length !== shared.length) {
+      await writeSharedFile(cleaned);
+    }
+  }
 }
 
 export async function setExtraAdmin(

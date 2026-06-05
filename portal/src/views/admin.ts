@@ -92,7 +92,12 @@ export function renderAdmin(args: {
 // ---------------------------------------------------------------------------
 export function renderAdminUsers(args: {
   user: string;
-  users: { username: string; tier: WorkspaceTier; hasWorkspace: boolean }[];
+  users: {
+    username: string;
+    tier: WorkspaceTier;
+    hasWorkspace: boolean;
+    sharingAllowed: boolean;
+  }[];
   extraAdmins: string[];  // emails, portal-elected (admins.users)
   envAdmins: string[];    // emails, from ADMIN_USERS env (fallback/bootstrap)
   hasAdminGroup: boolean; // whether ADMIN_GROUP_OID is configured
@@ -108,6 +113,9 @@ export function renderAdminUsers(args: {
     const wsBadge = u.hasWorkspace
       ? '<span class="badge st-running" title="Container exists for this user">yes</span>'
       : '<span class="muted small" title="No container yet — user hasn’t signed in or hasn’t clicked Create">—</span>';
+    const sharingBadge = u.sharingAllowed
+      ? '<span class="role" title="User can share webapps from their dashboard">on</span>'
+      : '<span class="muted small" title="User cannot share — Share buttons hidden from dashboard">off</span>';
 
     const desktopToggle =
       u.tier === 'desktop'
@@ -118,16 +126,27 @@ export function renderAdminUsers(args: {
              <button title="Enable GUI on next workspace restart.">Enable desktop</button>
            </form>`;
 
+    const sharingToggle =
+      u.sharingAllowed
+        ? `<form method="post" action="/admin/users/${esc(u.username)}/disallow-sharing" style="display:inline"
+                onsubmit="return confirm('Disallow sharing for ${esc(u.username)}? Any webapp URLs they have currently shared will immediately stop working.');">
+             <button title="Revoke webapp-sharing capability AND wipe any existing /shared/<user>/p/<port>/ URLs.">Disallow sharing</button>
+           </form>`
+        : `<form method="post" action="/admin/users/${esc(u.username)}/allow-sharing" style="display:inline">
+             <button title="Let this user expose webapp ports at /shared/<user>/p/<port>/ from their dashboard.">Allow sharing</button>
+           </form>`;
+
     return `<tr>
       <td><code>${esc(u.username)}</code>${isSelf ? ' <span class="small muted">(you)</span>' : ''}</td>
       <td>${tierBadge}</td>
       <td>${wsBadge}</td>
-      <td class="actions">${desktopToggle}</td>
+      <td>${sharingBadge}</td>
+      <td class="actions">${desktopToggle} ${sharingToggle}</td>
     </tr>`;
   }).join('');
 
   const emptyRow = users.length === 0
-    ? `<tr><td colspan="4" class="muted">No users discovered yet. Users appear here the first time they sign in via Entra and click "Create my workspace" on /app.</td></tr>`
+    ? `<tr><td colspan="5" class="muted">No users discovered yet. Users appear here the first time they sign in via Entra and click "Create my workspace" on /app.</td></tr>`
     : '';
 
   // Admins block — list portal-elected admin emails with Revoke buttons,
@@ -162,7 +181,7 @@ export function renderAdminUsers(args: {
   <h3 style="margin-top:24px">Known users</h3>
   <p class="muted small">Tier changes take effect on the next workspace restart — running containers keep their current tier until stopped and started again.</p>
   <table class="admin">
-    <thead><tr><th>Username</th><th>Tier</th><th>Workspace</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Username</th><th>Tier</th><th>Workspace</th><th>Sharing</th><th>Actions</th></tr></thead>
     <tbody>${rows}${emptyRow}</tbody>
   </table>
 

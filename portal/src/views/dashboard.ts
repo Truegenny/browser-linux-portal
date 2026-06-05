@@ -10,8 +10,9 @@ export function renderDashboard(args: {
   listeningPorts: ListeningPort[];
   tier: WorkspaceTier;
   sharedPorts: Set<number>;
+  sharingAllowed: boolean;
 }): string {
-  const { user, email, isAdmin, workspace, listeningPorts, tier, sharedPorts } = args;
+  const { user, email, isAdmin, workspace, listeningPorts, tier, sharedPorts, sharingAllowed } = args;
   const status = workspace.status;
   const desktopEnabled = tier === 'desktop';
 
@@ -152,6 +153,11 @@ cross-user access is impossible.
       } else if (p.reachable) {
         // Webapp — eligible for sharing. Built-in ports (terminal/files/
         // desktop) are not shareable; sharing is for user-launched servers.
+        // Share button is also gated by the admin-managed sharing-allowed
+        // list: a user not on that list sees no Share button at all.
+        // Already-shared ports still show with an Unshare button regardless
+        // so users can revoke their own state, but in practice an admin
+        // disabling sharing already wipes the entries.
         label = '<span class="port-tag tag-webapp">webapp</span>';
         body = `<a href="${webappUrl}" target="_blank" rel="noopener"><code>${p.port}</code></a>`;
         const isShared = sharedPorts.has(p.port);
@@ -166,13 +172,14 @@ cross-user access is impossible.
               </form>
               <a class="port-share-link" href="${shareUrl}" target="_blank" rel="noopener" title="Open shared URL"><code>${shareUrl}</code></a>
             </div>`;
-        } else {
+        } else if (sharingAllowed) {
           share = `
             <form method="post" action="/api/share/${p.port}" style="display:inline">
               <input type="hidden" name="share" value="on">
               <button class="btn-ghost" title="Make /shared/${esc(user)}/p/${p.port}/ reachable to any signed-in Ntiva user">Share</button>
             </form>`;
         }
+        // else: no button. Admin hasn't enabled sharing for this user.
       } else {
         label = '<span class="port-tag tag-loopback">loopback</span>';
         body = `<code title="Bound to ${esc(p.address)}; rebind 0.0.0.0 to expose">${p.port}</code>`;
@@ -200,6 +207,9 @@ cross-user access is impossible.
         <p class="muted small" style="margin-top:14px;">
           Ports are scoped to your container — they don't conflict with other users' workspaces, only with your own running services. Loopback ports (<code>127.0.0.1</code>) aren't reachable through the proxy; bind <code>0.0.0.0</code> instead.
         </p>
+        ${sharingAllowed
+          ? `<p class="muted small">Sharing is enabled for your workspace — click <strong>Share</strong> on any webapp port to expose it at <code>/shared/${esc(user)}/p/&lt;port&gt;/</code> for other signed-in Ntiva users.</p>`
+          : `<p class="muted small">Webapp sharing isn't enabled for your workspace. Ask an admin to flip <strong>Allow sharing</strong> for you in <code>/admin/users</code>.</p>`}
       </div>
     </aside>`;
 
