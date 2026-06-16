@@ -48,7 +48,9 @@ import {
   renderAdminUserLogs,
   renderAdminFiles,
   renderAdminBanner,
+  renderAdminHost,
 } from './views/admin.js';
+import { getHostStats } from './lib/hoststats.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -230,6 +232,13 @@ app.post('/admin/workspace/:user/destroy', async (req, reply) => {
   const keepVolume = body.wipe_volume !== 'on';
   await destroyWorkspace(target, { keepVolume });
   reply.redirect('/admin');
+});
+
+app.get('/admin/host', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const host = await getHostStats();
+  reply.type('text/html').send(renderAdminHost({ user: u.username, host }));
 });
 
 app.get('/admin/ports', async (req, reply) => {

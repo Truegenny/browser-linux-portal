@@ -415,3 +415,27 @@ footer.site .version {
   padding: 0 4px;
 }
 .site-banner-dismiss:hover { color: var(--fg); }
+
+/* ---------------------------------------------------------------------------
+ * Host health monitor (/admin/host)
+ * ------------------------------------------------------------------------- */
+.host-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+.host-card h3 { margin: 0 0 6px; font-size: 14px; color: var(--mut); font-weight: 600; }
+.host-card .host-stat { font-size: 30px; font-weight: 700; color: var(--fg); line-height: 1.1; margin-bottom: 10px; }
+.host-card p.small { margin: 6px 0 0; }
+.meter {
+  height: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.meter-fill { height: 100%; border-radius: 999px; transition: width .3s ease; }
+.meter-ok   { background: var(--accent); }
+.meter-warn { background: #facc15; }
+.meter-crit { background: var(--warn); }

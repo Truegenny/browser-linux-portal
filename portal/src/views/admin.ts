@@ -1,20 +1,41 @@
 import { layout, esc, bytesHuman } from '../lib/html.js';
 import type { WorkspaceInfo, DirEntry } from '../lib/dockerctl.js';
 import type { WorkspaceTier, Banner } from '../lib/users.js';
+import type { HostStats } from '../lib/hoststats.js';
 import { posix as posixPath } from 'node:path';
 
-type AdminSubTab = 'workspaces' | 'users' | 'ports' | 'logs' | 'banner';
+type AdminSubTab = 'workspaces' | 'users' | 'ports' | 'logs' | 'banner' | 'host';
 
 function adminSubnav(active: AdminSubTab): string {
   const tab = (label: string, href: string, key: AdminSubTab) =>
     `<a class="${active === key ? 'subtab subtab-active' : 'subtab'}" href="${href}">${label}</a>`;
   return `<nav class="subtabs">
     ${tab('Workspaces', '/admin', 'workspaces')}
+    ${tab('Host', '/admin/host', 'host')}
     ${tab('Users', '/admin/users', 'users')}
     ${tab('Banner', '/admin/banner', 'banner')}
     ${tab('Ports', '/admin/ports', 'ports')}
     ${tab('Logs', '/admin/logs', 'logs')}
   </nav>`;
+}
+
+function fmtUptime(sec: number | null): string {
+  if (sec === null || !Number.isFinite(sec) || sec < 0) return '—';
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const parts: string[] = [];
+  if (d) parts.push(`${d}d`);
+  if (h || d) parts.push(`${h}h`);
+  parts.push(`${m}m`);
+  return parts.join(' ');
+}
+
+// A labelled usage meter. `pct` 0..100; bar turns amber >75%, red >90%.
+function meter(pct: number): string {
+  const p = Math.max(0, Math.min(100, pct));
+  const cls = p > 90 ? 'meter-crit' : p > 75 ? 'meter-warn' : 'meter-ok';
+  return `<div class="meter"><div class="meter-fill ${cls}" style="width:${p.toFixed(1)}%"></div></div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -432,6 +453,96 @@ export function renderAdminFiles(args: {
     body,
     { user, isAdmin: true, active: 'admin' },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Host — host machine health monitor
+// ---------------------------------------------------------------------------
+export function renderAdminHost(args: { user: string; host: HostStats }): string {
+  const { user, host } = args;
+
+  const memPct = host.memTotal > 0 ? (host.memUsed / host.memTotal) * 100 : 0;
+  const diskPct = host.diskTotal > 0 ? (host.diskUsed / host.diskTotal) * 100 : 0;
+  const cpuPct = host.cpuPct ?? 0;
+  const loadPct = host.cpuCount > 0 ? (host.loadAvg[0] / host.cpuCount) * 100 : 0;
+
+  const cpuValue = host.cpuPct === null ? '—' : `${cpuPct.toFixed(1)}%`;
+
+  const cards = `
+  <div class="host-grid">
+    <div class="card host-card">
+      <h3>CPU</h3>
+      <div class="host-stat">${cpuValue}</div>
+      ${meter(cpuPct)}
+      <p class="muted small">${host.cpuCount} core${host.cpuCount === 1 ? '' : 's'} ·
+        load ${host.loadAvg.map((l) => l.toFixed(2)).join(' / ')} (1/5/15m)</p>
+      ${meter(loadPct)}
+      <p class="muted small">1-min load vs cores</p>
+    </div>
+
+    <div class="card host-card">
+      <h3>Memory</h3>
+      <div class="host-stat">${memPct.toFixed(1)}%</div>
+      ${meter(memPct)}
+      <p class="muted small">${bytesHuman(host.memUsed)} used / ${bytesHuman(host.memTotal)} total</p>
+      <p class="muted small">${bytesHuman(host.memAvailable)} available</p>
+    </div>
+
+    <div class="card host-card">
+      <h3>Disk</h3>
+      <div class="host-stat">${diskPct.toFixed(1)}%</div>
+      ${meter(diskPct)}
+      <p class="muted small">${bytesHuman(host.diskUsed)} used / ${bytesHuman(host.diskTotal)} total</p>
+      <p class="muted small">${bytesHuman(host.diskAvail)} free · <code>${esc(host.diskPath)}</code></p>
+    </div>
+
+    <div class="card host-card">
+      <h3>Uptime</h3>
+      <div class="host-stat">${fmtUptime(host.uptimeSec)}</div>
+      <p class="muted small">${host.containersRunning} of ${host.containersTotal} containers running</p>
+      <p class="muted small">${host.images} images</p>
+    </div>
+  </div>`;
+
+  const facts = `
+  <table class="admin" style="margin-top:24px;max-width:680px;">
+    <tbody>
+      <tr><td class="muted">Hostname</td><td><code>${esc(host.hostname)}</code></td></tr>
+      <tr><td class="muted">OS</td><td>${esc(host.os)}</td></tr>
+      <tr><td class="muted">Kernel</td><td><code>${esc(host.kernel)}</code></td></tr>
+      <tr><td class="muted">Docker</td><td><code>${esc(host.dockerVersion)}</code></td></tr>
+    </tbody>
+  </table>`;
+
+  const body = `
+<section class="container">
+  <div class="admin-head">
+    <div>
+      <h2>Admin</h2>
+      <p class="lead">Host machine health. <span class="muted small" id="host-refresh-note">auto-refreshing every 10s</span></p>
+    </div>
+    <a class="btn-ghost" href="/admin/host">Refresh</a>
+  </div>
+  ${adminSubnav('host')}
+  ${cards}
+  ${facts}
+  <p class="muted small" style="margin-top:18px;">
+    CPU is sampled over a short window across all cores. Memory and uptime are
+    read from the host (procfs is not container-namespaced); disk reflects the
+    filesystem backing <code>${esc(host.diskPath)}</code> on the host.
+  </p>
+</section>
+<script>
+  (function () {
+    // Auto-refresh the host monitor. Pause when the tab is hidden so we don't
+    // sample CPU needlessly in the background.
+    var id = setTimeout(function reload() {
+      if (!document.hidden) { location.reload(); return; }
+      id = setTimeout(reload, 10000);
+    }, 10000);
+  })();
+</script>`;
+  return layout('Admin — Host', body, { user, isAdmin: true, active: 'admin' });
 }
 
 // ---------------------------------------------------------------------------
