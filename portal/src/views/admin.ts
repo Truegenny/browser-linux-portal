@@ -471,10 +471,16 @@ export function renderAdminBanner(args: {
 
   <h3 style="margin-top:28px">${active ? 'Update' : 'Create'} banner</h3>
   <p class="muted small">
-    Shown at the top of every page to all signed-in users. Use <strong>info</strong>
+    Shown at the top of every page to all signed-in users, and printed in
+    each workspace terminal on every new shell. Use <strong>info</strong>
     for tips, <strong>warning</strong> for upcoming maintenance, <strong>critical</strong>
     for active incidents / forced reboots. Editing the message re-shows it to everyone,
     even those who dismissed the previous one.
+  </p>
+  <p class="muted small">
+    Note: the dismiss toggle only applies to the web banner — the terminal copy
+    always shows on a fresh shell. Terminal delivery reaches running workspaces
+    immediately; stopped ones pick it up on next start.
   </p>
   <form method="post" action="/admin/banner" class="user-form" style="flex-direction:column;align-items:stretch;max-width:680px;gap:14px;">
     <label>

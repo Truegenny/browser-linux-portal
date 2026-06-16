@@ -12,7 +12,7 @@
 import Docker from 'dockerode';
 import { posix as posixPath } from 'node:path';
 import { config, parseMemory } from './config.js';
-import { USERNAME_RE, type WorkspaceTier } from './users.js';
+import { USERNAME_RE, getBanner, type WorkspaceTier } from './users.js';
 
 const docker = new Docker(); // /var/run/docker.sock
 
@@ -126,6 +126,7 @@ export async function ensureWorkspace(
     const currentTier = readContainerTier(existing);
     if (currentTier === opts.tier) {
       await docker.getContainer(cName).start();
+      await pushBannerToWorkspace(user);
       return getWorkspace(user);
     }
     // Tier changed while stopped — destroy the container (keep the volume)
@@ -206,6 +207,7 @@ export async function ensureWorkspace(
   });
 
   await docker.getContainer(cName).start();
+  await pushBannerToWorkspace(user);
   return getWorkspace(user);
 }
 
@@ -268,6 +270,66 @@ export async function listWorkspaces(): Promise<WorkspaceInfo[]> {
       containerTier,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Announcement banner delivery.
+// ---------------------------------------------------------------------------
+// The login shell in each workspace prints /run/claudelab/banner (see the
+// workspace image's show-banner.sh). The workspace can't fetch the banner from
+// the portal — workspace-net is isolated from portal:3000 — so the portal
+// writes the file via the Docker socket: on workspace create/start, and (via
+// pushBannerToRunning) whenever an admin changes the banner. All best-effort:
+// banner delivery must never block or fail a workspace start.
+async function writeBannerToContainer(cName: string, text: string): Promise<void> {
+  // base64 so arbitrary banner text (quotes, newlines, $, backticks) can't
+  // break out of the shell command. The b64 alphabet is shell-safe in quotes.
+  const b64 = Buffer.from(text ?? '', 'utf8').toString('base64');
+  const script =
+    `mkdir -p /run/claudelab && printf %s '${b64}' | base64 -d > /run/claudelab/banner`;
+  const exec = await docker.getContainer(cName).exec({
+    Cmd: ['sh', '-c', script],
+    User: 'root',
+    AttachStdout: false,
+    AttachStderr: false,
+  });
+  await exec.start({ Detach: true });
+}
+
+// Push a user's workspace its current banner (best-effort; swallows errors).
+async function pushBannerToWorkspace(user: string): Promise<void> {
+  try {
+    const banner = await getBanner();
+    const { container: cName } = names(user);
+    await writeBannerToContainer(cName, banner?.message ?? '');
+  } catch {
+    /* best-effort */
+  }
+}
+
+// Write the given banner text to every running workspace. Called by the
+// portal's /admin/banner routes after an admin sets or clears the banner.
+export async function pushBannerToRunning(text: string): Promise<void> {
+  let containers: Docker.ContainerInfo[];
+  try {
+    // No `all: true` → running containers only (exec needs a running target).
+    containers = await docker.listContainers({
+      filters: { label: [`${LABEL_USER}`] },
+    });
+  } catch {
+    return;
+  }
+  await Promise.all(
+    containers.map(async (c) => {
+      const name = c.Names[0]?.replace(/^\//, '');
+      if (!name) return;
+      try {
+        await writeBannerToContainer(name, text);
+      } catch {
+        /* one bad container shouldn't abort the rest */
+      }
+    }),
+  );
 }
 
 export interface ListeningPort {

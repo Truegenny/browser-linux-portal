@@ -19,6 +19,7 @@ import {
   getContainerLogs,
   listContainerDir,
   readContainerFile,
+  pushBannerToRunning,
 } from './lib/dockerctl.js';
 import {
   setUserTier,
@@ -451,6 +452,7 @@ app.post('/admin/banner', async (req, reply) => {
   if (!message) {
     // Empty message from the form acts as a clear.
     await clearBanner();
+    await pushBannerToRunning('').catch(() => {});
     reply.redirect('/admin/banner');
     return;
   }
@@ -466,6 +468,8 @@ app.post('/admin/banner', async (req, reply) => {
     reply.code(400).type('text/plain').send(`Failed: ${e?.message ?? e}`);
     return;
   }
+  // Mirror the banner into every running workspace's terminal (best-effort).
+  await pushBannerToRunning(message).catch(() => {});
   reply.redirect('/admin/banner');
 });
 
@@ -473,6 +477,7 @@ app.post('/admin/banner/clear', async (req, reply) => {
   const u = await requireAdmin(req, reply);
   if (!u) return;
   await clearBanner();
+  await pushBannerToRunning('').catch(() => {});
   reply.redirect('/admin/banner');
 });
 

@@ -178,14 +178,17 @@ RUN set -eux; \
 
 COPY motd /etc/motd
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY show-banner.sh /usr/local/bin/claudelab-banner
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/claudelab-banner
 
 USER node
 WORKDIR /home/node
 
-# Bash login shell shows MOTD and a one-time claude-login hint.
+# Bash login shell shows MOTD, the admin announcement banner (if any), and a
+# one-time claude-login hint.
 RUN set -eux; \
     echo 'cat /etc/motd' >> /home/node/.bashrc; \
+    echo '/usr/local/bin/claudelab-banner 2>/dev/null || true' >> /home/node/.bashrc; \
     echo '[ -f /home/node/.first-run ] || { echo; echo "Tip: run \"claude /login\" to authenticate Claude Code."; echo; touch /home/node/.first-run; }' >> /home/node/.bashrc
 
 EXPOSE 7681 7682 7683
