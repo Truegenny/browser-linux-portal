@@ -15,6 +15,7 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 const CADDY_DIR = '/caddy';
 const DESKTOP_FILE = path.join(CADDY_DIR, 'desktop.users');
@@ -22,6 +23,7 @@ const ADMINS_FILE = path.join(CADDY_DIR, 'admins.users');
 const SHARED_FILE = path.join(CADDY_DIR, 'shared.ports');
 const SHARING_ALLOWED_FILE = path.join(CADDY_DIR, 'sharing-allowed.users');
 const BANNER_FILE = path.join(CADDY_DIR, 'banner.json');
+const BUGS_FILE = path.join(CADDY_DIR, 'bug-reports.json');
 
 export type WorkspaceTier = 'terminal' | 'desktop';
 
@@ -295,6 +297,106 @@ export async function clearBanner(): Promise<void> {
     JSON.stringify({ message: '', level: 'info', dismissible: true, updatedAt: '' }, null, 2) + '\n',
     'utf8',
   );
+}
+
+// ---------------------------------------------------------------------------
+// bug-reports.json — user-submitted bug reports, shown to admins under
+// /admin/bugs. A JSON array (low volume, team-scale). Newest reports are
+// appended; the file is capped to the most recent MAX_BUGS so it can't grow
+// unbounded. Admins mark reports resolved or delete them.
+// ---------------------------------------------------------------------------
+const MAX_BUGS = 500;
+
+export type BugStatus = 'open' | 'resolved';
+
+export interface BugReport {
+  id: string;
+  slug: string;        // reporter workspace slug
+  email: string;       // reporter email
+  message: string;
+  page?: string;       // page the user was on when reporting
+  userAgent?: string;
+  createdAt: string;   // ISO
+  status: BugStatus;
+}
+
+async function readBugs(): Promise<BugReport[]> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(BUGS_FILE, 'utf8');
+  } catch (e: any) {
+    if (e.code === 'ENOENT') return [];
+    return [];
+  }
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((r) => r && typeof r.id === 'string' && typeof r.message === 'string')
+      .map((r) => ({
+        id: r.id,
+        slug: typeof r.slug === 'string' ? r.slug : 'unknown',
+        email: typeof r.email === 'string' ? r.email : '',
+        message: String(r.message),
+        page: typeof r.page === 'string' ? r.page : undefined,
+        userAgent: typeof r.userAgent === 'string' ? r.userAgent : undefined,
+        createdAt: typeof r.createdAt === 'string' ? r.createdAt : '',
+        status: r.status === 'resolved' ? 'resolved' : 'open',
+      }));
+  } catch {
+    return [];
+  }
+}
+
+async function writeBugs(list: BugReport[]): Promise<void> {
+  await fs.writeFile(BUGS_FILE, JSON.stringify(list, null, 2) + '\n', 'utf8');
+}
+
+// Reports newest-first for display.
+export async function listBugReports(): Promise<BugReport[]> {
+  const list = await readBugs();
+  return list.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+}
+
+export async function addBugReport(input: {
+  slug: string;
+  email: string;
+  message: string;
+  page?: string;
+  userAgent?: string;
+}): Promise<BugReport> {
+  const message = input.message.trim();
+  if (!message) throw new Error('Report message is empty');
+  if (message.length > 5000) throw new Error('Report too long (max 5000 chars)');
+  const report: BugReport = {
+    id: randomUUID(),
+    slug: input.slug,
+    email: input.email,
+    message,
+    page: input.page ? input.page.slice(0, 500) : undefined,
+    userAgent: input.userAgent ? input.userAgent.slice(0, 500) : undefined,
+    createdAt: new Date().toISOString(),
+    status: 'open',
+  };
+  const list = await readBugs();
+  list.push(report);
+  // Keep the most recent MAX_BUGS so the file stays bounded.
+  await writeBugs(list.slice(-MAX_BUGS));
+  return report;
+}
+
+export async function setBugStatus(id: string, status: BugStatus): Promise<void> {
+  const list = await readBugs();
+  const r = list.find((x) => x.id === id);
+  if (!r) return;
+  r.status = status;
+  await writeBugs(list);
+}
+
+export async function deleteBugReport(id: string): Promise<void> {
+  const list = await readBugs();
+  const filtered = list.filter((x) => x.id !== id);
+  if (filtered.length !== list.length) await writeBugs(filtered);
 }
 
 export async function setExtraAdmin(

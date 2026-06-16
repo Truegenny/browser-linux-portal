@@ -16,3 +16,4 @@ caddy/desktop.users
 caddy/shared.ports
 caddy/sharing-allowed.users
 caddy/banner.json
+caddy/bug-reports.json

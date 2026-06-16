@@ -36,10 +36,15 @@ import {
   getBanner,
   setBanner,
   clearBanner,
+  listBugReports,
+  addBugReport,
+  setBugStatus,
+  deleteBugReport,
   USERNAME_RE,
 } from './lib/users.js';
 import { renderMarketing, renderSignedOut } from './views/marketing.js';
 import { renderDashboard } from './views/dashboard.js';
+import { renderReport } from './views/report.js';
 import {
   renderAdmin,
   renderLogs,
@@ -49,6 +54,7 @@ import {
   renderAdminFiles,
   renderAdminBanner,
   renderAdminHost,
+  renderAdminBugs,
 } from './views/admin.js';
 import { getHostStats } from './lib/hoststats.js';
 
@@ -176,6 +182,42 @@ app.post('/api/workspace/recreate', async (req, reply) => {
 });
 
 // ---------------------------------------------------------------------------
+// Bug reporting (user-facing)
+// ---------------------------------------------------------------------------
+app.get('/report', async (req, reply) => {
+  const u = await requireUser(req, reply);
+  if (!u) return;
+  const sent = (req.query as { sent?: string }).sent === '1';
+  reply.type('text/html').send(
+    renderReport({ user: u.username, isAdmin: u.isAdmin, sent }),
+  );
+});
+
+app.post('/api/report', async (req, reply) => {
+  const u = await requireUser(req, reply);
+  if (!u) return;
+  const body = (req.body ?? {}) as { message?: string; page?: string };
+  const message = (body.message ?? '').trim();
+  if (!message) {
+    reply.code(400).type('text/plain').send('Report message is required.');
+    return;
+  }
+  try {
+    await addBugReport({
+      slug: u.username,
+      email: u.email,
+      message,
+      page: body.page,
+      userAgent: req.headers['user-agent'],
+    });
+  } catch (e: any) {
+    reply.code(400).type('text/plain').send(`Failed: ${e?.message ?? e}`);
+    return;
+  }
+  reply.redirect('/report?sent=1');
+});
+
+// ---------------------------------------------------------------------------
 // Admin — workspaces
 // ---------------------------------------------------------------------------
 app.get('/admin', async (req, reply) => {
@@ -239,6 +281,37 @@ app.get('/admin/host', async (req, reply) => {
   if (!u) return;
   const host = await getHostStats();
   reply.type('text/html').send(renderAdminHost({ user: u.username, host }));
+});
+
+// ---------------------------------------------------------------------------
+// Admin — bug reports
+// ---------------------------------------------------------------------------
+app.get('/admin/bugs', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const reports = await listBugReports();
+  reply.type('text/html').send(renderAdminBugs({ user: u.username, reports }));
+});
+
+app.post('/admin/bugs/:id/resolve', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  await setBugStatus((req.params as { id: string }).id, 'resolved');
+  reply.redirect('/admin/bugs');
+});
+
+app.post('/admin/bugs/:id/reopen', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  await setBugStatus((req.params as { id: string }).id, 'open');
+  reply.redirect('/admin/bugs');
+});
+
+app.post('/admin/bugs/:id/delete', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  await deleteBugReport((req.params as { id: string }).id);
+  reply.redirect('/admin/bugs');
 });
 
 app.get('/admin/ports', async (req, reply) => {

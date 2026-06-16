@@ -439,3 +439,18 @@ footer.site .version {
 .meter-ok   { background: var(--accent); }
 .meter-warn { background: #facc15; }
 .meter-crit { background: var(--warn); }
+
+/* Count badge (e.g. open bug count on the admin Bugs subtab). */
+.count-badge {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 5px;
+  margin-left: 4px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 999px;
+  background: var(--warn);
+  color: #fff;
+  font-weight: 600;
+}

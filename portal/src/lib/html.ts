@@ -143,6 +143,7 @@ ${body}
   <div>
     ClaudeLab — self-hosted dev workspaces.
     Built on Caddy + Docker + ttyd + Claude Code.
+    ${opts.user ? '<a href="/report">Report a bug</a>' : ''}
   </div>
   <div class="version">v${esc(VERSION)}</div>
 </footer>

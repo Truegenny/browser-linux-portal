@@ -1,19 +1,22 @@
 import { layout, esc, bytesHuman } from '../lib/html.js';
 import type { WorkspaceInfo, DirEntry } from '../lib/dockerctl.js';
-import type { WorkspaceTier, Banner } from '../lib/users.js';
+import type { WorkspaceTier, Banner, BugReport } from '../lib/users.js';
 import type { HostStats } from '../lib/hoststats.js';
 import { posix as posixPath } from 'node:path';
 
-type AdminSubTab = 'workspaces' | 'users' | 'ports' | 'logs' | 'banner' | 'host';
+type AdminSubTab = 'workspaces' | 'users' | 'ports' | 'logs' | 'banner' | 'host' | 'bugs';
 
-function adminSubnav(active: AdminSubTab): string {
+function adminSubnav(active: AdminSubTab, opts: { openBugs?: number } = {}): string {
   const tab = (label: string, href: string, key: AdminSubTab) =>
     `<a class="${active === key ? 'subtab subtab-active' : 'subtab'}" href="${href}">${label}</a>`;
+  const bugsLabel =
+    opts.openBugs && opts.openBugs > 0 ? `Bugs <span class="count-badge">${opts.openBugs}</span>` : 'Bugs';
   return `<nav class="subtabs">
     ${tab('Workspaces', '/admin', 'workspaces')}
     ${tab('Host', '/admin/host', 'host')}
     ${tab('Users', '/admin/users', 'users')}
     ${tab('Banner', '/admin/banner', 'banner')}
+    ${tab(bugsLabel, '/admin/bugs', 'bugs')}
     ${tab('Ports', '/admin/ports', 'ports')}
     ${tab('Logs', '/admin/logs', 'logs')}
   </nav>`;
@@ -453,6 +456,72 @@ export function renderAdminFiles(args: {
     body,
     { user, isAdmin: true, active: 'admin' },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Bugs — user-submitted bug reports
+// ---------------------------------------------------------------------------
+export function renderAdminBugs(args: { user: string; reports: BugReport[] }): string {
+  const { user, reports } = args;
+  const open = reports.filter((r) => r.status === 'open').length;
+
+  const rows = reports
+    .map((r) => {
+      const resolved = r.status === 'resolved';
+      const statusBadge = resolved
+        ? '<span class="muted small">resolved</span>'
+        : '<span class="badge st-running">open</span>';
+      const ctx = [
+        r.page ? `<div class="muted small">on <code>${esc(r.page)}</code></div>` : '',
+        r.userAgent ? `<div class="muted small" title="${esc(r.userAgent)}">UA: ${esc(r.userAgent.slice(0, 60))}${r.userAgent.length > 60 ? '…' : ''}</div>` : '',
+      ].join('');
+      const toggle = resolved
+        ? `<form method="post" action="/admin/bugs/${esc(r.id)}/reopen" style="display:inline">
+             <button class="btn-ghost">Reopen</button>
+           </form>`
+        : `<form method="post" action="/admin/bugs/${esc(r.id)}/resolve" style="display:inline">
+             <button class="btn-ghost">Mark resolved</button>
+           </form>`;
+      return `<tr${resolved ? ' class="muted"' : ''}>
+        <td>${statusBadge}</td>
+        <td>
+          <div style="white-space:pre-wrap;">${esc(r.message)}</div>
+          ${ctx}
+        </td>
+        <td><code>${esc(r.slug)}</code><div class="muted small">${esc(r.email)}</div></td>
+        <td class="muted small">${esc(r.createdAt)}</td>
+        <td class="actions">
+          ${toggle}
+          <form method="post" action="/admin/bugs/${esc(r.id)}/delete" style="display:inline"
+                onsubmit="return confirm('Delete this report permanently?');">
+            <button class="btn-ghost">Delete</button>
+          </form>
+        </td>
+      </tr>`;
+    })
+    .join('');
+
+  const empty =
+    reports.length === 0
+      ? `<tr><td colspan="5" class="muted">No bug reports yet. Users submit them from the “Report a bug” link in the footer.</td></tr>`
+      : '';
+
+  const body = `
+<section class="container">
+  <div class="admin-head">
+    <div>
+      <h2>Admin</h2>
+      <p class="lead">User-submitted bug reports — ${open} open, ${reports.length} total.</p>
+    </div>
+    <a class="btn-ghost" href="/admin/bugs">Refresh</a>
+  </div>
+  ${adminSubnav('bugs', { openBugs: open })}
+  <table class="admin">
+    <thead><tr><th>Status</th><th>Report</th><th>From</th><th>When</th><th>Actions</th></tr></thead>
+    <tbody>${rows}${empty}</tbody>
+  </table>
+</section>`;
+  return layout('Admin — Bugs', body, { user, isAdmin: true, active: 'admin' });
 }
 
 // ---------------------------------------------------------------------------
