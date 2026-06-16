@@ -153,6 +153,21 @@ app.post('/api/workspace/restart', async (req, reply) => {
   reply.redirect('/app');
 });
 
+// Recreate = destroy the container (home volume preserved) + create fresh
+// from the current image. Unlike restart, which reuses the existing
+// container, this is how a user picks up a new workspace image or changed
+// HostConfig (e.g. the disk-backed /tmp). Everything in /home/node survives;
+// anything in the container layer (system packages installed at runtime,
+// files outside the home dir, running processes) does not.
+app.post('/api/workspace/recreate', async (req, reply) => {
+  const u = await requireUser(req, reply);
+  if (!u) return;
+  const tier = await getUserTier(u.username);
+  await destroyWorkspace(u.username, { keepVolume: true });
+  await ensureWorkspace(u.username, { tier });
+  reply.redirect('/app');
+});
+
 // ---------------------------------------------------------------------------
 // Admin — workspaces
 // ---------------------------------------------------------------------------

@@ -24,15 +24,27 @@ export function renderDashboard(args: {
     ? `<a class="cta secondary" href="/u/${esc(user)}/desktop/" target="_blank" rel="noopener">Open desktop →</a>`
     : '';
 
+  // Recreate rebuilds the container on the current image (picking up image
+  // and HostConfig changes) while preserving the home volume. It's
+  // destructive to the container layer, so it always confirms. Shown in both
+  // running and stopped states; pointless when absent (Create already builds
+  // fresh).
+  const recreateBtn = `
+         <form method="post" action="/api/workspace/recreate" style="display:inline"
+               onsubmit="return confirm('Recreate your workspace on the latest image?\\n\\nYour home directory (/home/node) — repos, configs, ~/.claude — is preserved.\\n\\nAnything OUTSIDE your home directory is lost: system packages installed with sudo apt, global npm tools, and any running processes. Save your work and close sessions first.');">
+           <button class="cta secondary" title="Rebuild this workspace on the latest image. Home directory preserved; container-layer changes (system/global packages, files outside ~) are lost.">Recreate</button>
+         </form>`;
+
   const actions =
     status === 'absent'
       ? `<form method="post" action="/api/workspace/start">
            <button class="cta">Create my workspace</button>
          </form>`
       : status === 'stopped'
-      ? `<form method="post" action="/api/workspace/start">
+      ? `<form method="post" action="/api/workspace/start" style="display:inline">
            <button class="cta">Start workspace</button>
-         </form>`
+         </form>
+         ${recreateBtn}`
       : `<a class="cta" href="/u/${esc(user)}/" target="_blank" rel="noopener">Open terminal →</a>
          ${desktopLink}
          <a class="cta secondary" href="/u/${esc(user)}/files/" target="_blank" rel="noopener">Open files →</a>
@@ -41,7 +53,8 @@ export function renderDashboard(args: {
          </form>
          <form method="post" action="/api/workspace/restart" style="display:inline">
            <button class="cta secondary">Restart</button>
-         </form>`;
+         </form>
+         ${recreateBtn}`;
 
   const meta = `
     <dl class="meta">
