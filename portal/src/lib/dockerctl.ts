@@ -173,7 +173,15 @@ export async function ensureWorkspace(
       NanoCpus: nanoCpus,
       PidsLimit: 512,
       SecurityOpt: ['no-new-privileges:true'],
-      Tmpfs: { '/tmp': 'rw,size=256m', '/run': 'rw,size=64m' },
+      // /tmp is deliberately NOT a tmpfs. A tmpfs is RAM-backed and counts
+      // against the Memory cgroup cap, so a size-capped /tmp (we had 256m)
+      // fills and ENOSPC-crashes on large `git clone`s, npm/pip caches, and
+      // build temp files — and raising the cap would just trade ENOSPC for
+      // an OOM-kill against the tier's RAM budget. Leaving /tmp off Tmpfs
+      // puts it on the container's writable overlay (host disk), bounded by
+      // host disk like the home volume, not by RAM. Still wiped on container
+      // recreate. /run stays a small tmpfs (pid/lock files only).
+      Tmpfs: { '/run': 'rw,size=64m' },
       // Security: drop all Linux capabilities then add back only those a
       // dev shell with sudo actually needs. Default Docker grants 14 caps;
       // we keep 7 and drop the others (NET_RAW, NET_BIND_SERVICE, MKNOD,
