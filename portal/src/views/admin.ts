@@ -1,9 +1,9 @@
 import { layout, esc, bytesHuman } from '../lib/html.js';
 import type { WorkspaceInfo, DirEntry } from '../lib/dockerctl.js';
-import type { WorkspaceTier } from '../lib/users.js';
+import type { WorkspaceTier, Banner } from '../lib/users.js';
 import { posix as posixPath } from 'node:path';
 
-type AdminSubTab = 'workspaces' | 'users' | 'ports' | 'logs';
+type AdminSubTab = 'workspaces' | 'users' | 'ports' | 'logs' | 'banner';
 
 function adminSubnav(active: AdminSubTab): string {
   const tab = (label: string, href: string, key: AdminSubTab) =>
@@ -11,6 +11,7 @@ function adminSubnav(active: AdminSubTab): string {
   return `<nav class="subtabs">
     ${tab('Workspaces', '/admin', 'workspaces')}
     ${tab('Users', '/admin/users', 'users')}
+    ${tab('Banner', '/admin/banner', 'banner')}
     ${tab('Ports', '/admin/ports', 'ports')}
     ${tab('Logs', '/admin/logs', 'logs')}
   </nav>`;
@@ -431,4 +432,79 @@ export function renderAdminFiles(args: {
     body,
     { user, isAdmin: true, active: 'admin' },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Banner — site-wide announcement editor
+// ---------------------------------------------------------------------------
+export function renderAdminBanner(args: {
+  user: string;
+  banner: Banner | null;
+}): string {
+  const { user, banner } = args;
+  const active = banner !== null;
+  const level = banner?.level ?? 'info';
+  const message = banner?.message ?? '';
+  const dismissible = banner ? banner.dismissible : true;
+
+  const levelOption = (value: string, label: string) =>
+    `<option value="${value}"${level === value ? ' selected' : ''}>${label}</option>`;
+
+  const status = active
+    ? `<p class="banner banner-${level === 'critical' ? 'error' : 'ok'}" style="white-space:pre-wrap;">${esc(message)}</p>
+       <p class="muted small">
+         Live now · level <strong>${esc(level)}</strong> ·
+         ${dismissible ? 'dismissible' : 'pinned (not dismissible)'}
+         ${banner?.updatedBy ? ` · last set by <code>${esc(banner.updatedBy)}</code>` : ''}
+         ${banner?.updatedAt ? ` · ${esc(banner.updatedAt)}` : ''}
+       </p>`
+    : '<p class="muted">No banner is currently shown to users.</p>';
+
+  const body = `
+<section class="container">
+  <h2>Admin</h2>
+  <p class="lead">Site-wide announcement banner.</p>
+  ${adminSubnav('banner')}
+
+  <h3 style="margin-top:24px">Current banner</h3>
+  ${status}
+
+  <h3 style="margin-top:28px">${active ? 'Update' : 'Create'} banner</h3>
+  <p class="muted small">
+    Shown at the top of every page to all signed-in users. Use <strong>info</strong>
+    for tips, <strong>warning</strong> for upcoming maintenance, <strong>critical</strong>
+    for active incidents / forced reboots. Editing the message re-shows it to everyone,
+    even those who dismissed the previous one.
+  </p>
+  <form method="post" action="/admin/banner" class="user-form" style="flex-direction:column;align-items:stretch;max-width:680px;gap:14px;">
+    <label>
+      <span>Message</span>
+      <textarea name="message" rows="3" required maxlength="2000"
+        placeholder="e.g. Maintenance window tonight 9–10pm ET — workspaces will be restarted.">${esc(message)}</textarea>
+    </label>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:end;">
+      <label style="max-width:220px;">
+        <span>Level</span>
+        <select name="level">
+          ${levelOption('info', 'Info (tip / FYI)')}
+          ${levelOption('warning', 'Warning (upcoming)')}
+          ${levelOption('critical', 'Critical (active incident)')}
+        </select>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg-soft-2);">
+        <input type="checkbox" name="dismissible"${dismissible ? ' checked' : ''}>
+        Allow users to dismiss
+      </label>
+      <button class="cta">${active ? 'Update banner' : 'Publish banner'}</button>
+    </div>
+  </form>
+
+  ${active
+    ? `<form method="post" action="/admin/banner/clear" style="margin-top:16px;"
+            onsubmit="return confirm('Remove the banner for all users?');">
+         <button class="cta secondary">Clear banner</button>
+       </form>`
+    : ''}
+</section>`;
+  return layout('Admin — Banner', body, { user, isAdmin: true, active: 'admin' });
 }

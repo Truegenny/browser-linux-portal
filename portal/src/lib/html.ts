@@ -80,6 +80,47 @@ export function layout(
 })();
 </script>`;
 
+  // Site-wide announcement banner. Fetched client-side from /api/banner so a
+  // single layout covers every page without threading the banner through each
+  // render call. The message is set via textContent (never innerHTML) so an
+  // admin's text can't inject markup. Dismissible banners remember the
+  // dismissed `updatedAt` in localStorage; a changed banner re-appears.
+  const bannerScript = `
+<script>
+(function(){
+  fetch('/api/banner', { headers: { 'accept': 'application/json' }, credentials: 'same-origin' })
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(b){
+      if (!b || !b.message) return;
+      var host = document.getElementById('site-banner-host');
+      if (!host) return;
+      var level = (b.level === 'warning' || b.level === 'critical') ? b.level : 'info';
+      var key = 'blp.banner.dismissed';
+      if (b.dismissible && b.updatedAt && localStorage.getItem(key) === b.updatedAt) return;
+      var bar = document.createElement('div');
+      bar.className = 'site-banner level-' + level;
+      var msg = document.createElement('span');
+      msg.className = 'site-banner-msg';
+      msg.textContent = b.message;
+      bar.appendChild(msg);
+      if (b.dismissible) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'site-banner-dismiss';
+        btn.setAttribute('aria-label', 'Dismiss');
+        btn.textContent = '\\u00D7';
+        btn.addEventListener('click', function(){
+          try { localStorage.setItem(key, b.updatedAt || '1'); } catch (e) {}
+          host.innerHTML = '';
+        });
+        bar.appendChild(btn);
+      }
+      host.appendChild(bar);
+    })
+    .catch(function(){});
+})();
+</script>`;
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -90,6 +131,7 @@ ${earlyThemeScript}
 <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+<div id="site-banner-host"></div>
 <header class="site">
   <a class="brand" href="/"><span class="glyph">_$</span> ClaudeLab</a>
   <nav class="tabs">${tabs.join('')}</nav>
@@ -105,6 +147,7 @@ ${body}
   <div class="version">v${esc(VERSION)}</div>
 </footer>
 ${toggleScript}
+${bannerScript}
 </body>
 </html>`;
 }

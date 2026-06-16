@@ -32,6 +32,9 @@ import {
   listSharingAllowed,
   isSharingAllowed,
   setSharingAllowed,
+  getBanner,
+  setBanner,
+  clearBanner,
   USERNAME_RE,
 } from './lib/users.js';
 import { renderMarketing, renderSignedOut } from './views/marketing.js';
@@ -43,6 +46,7 @@ import {
   renderAdminPorts,
   renderAdminUserLogs,
   renderAdminFiles,
+  renderAdminBanner,
 } from './views/admin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -421,6 +425,78 @@ app.post('/admin/users/revoke-admin', async (req, reply) => {
   }
   await setExtraAdmin(email, false);
   reply.redirect('/admin/users');
+});
+
+// ---------------------------------------------------------------------------
+// Admin — announcement banner
+// ---------------------------------------------------------------------------
+// A single site-wide banner shown to all signed-in users (rendered client-side
+// from GET /api/banner). For maintenance windows, forced-reboot notices, tips.
+app.get('/admin/banner', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const banner = await getBanner();
+  reply.type('text/html').send(renderAdminBanner({ user: u.username, banner }));
+});
+
+app.post('/admin/banner', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  const body = (req.body ?? {}) as {
+    message?: string;
+    level?: string;
+    dismissible?: string;
+  };
+  const message = (body.message ?? '').trim();
+  if (!message) {
+    // Empty message from the form acts as a clear.
+    await clearBanner();
+    reply.redirect('/admin/banner');
+    return;
+  }
+  try {
+    await setBanner({
+      message,
+      level: body.level ?? 'info',
+      // Unchecked checkboxes aren't submitted, so absence = not dismissible.
+      dismissible: body.dismissible === 'on',
+      updatedBy: u.email,
+    });
+  } catch (e: any) {
+    reply.code(400).type('text/plain').send(`Failed: ${e?.message ?? e}`);
+    return;
+  }
+  reply.redirect('/admin/banner');
+});
+
+app.post('/admin/banner/clear', async (req, reply) => {
+  const u = await requireAdmin(req, reply);
+  if (!u) return;
+  await clearBanner();
+  reply.redirect('/admin/banner');
+});
+
+// Public (any signed-in user) read endpoint. The layout's client script
+// fetches this on every page and renders the banner if present. Returns {}
+// when there's no active banner. Caddy already gates /api/* behind auth.
+app.get('/api/banner', async (req, reply) => {
+  const u = await getUser(req);
+  if (!u) {
+    reply.send({});
+    return;
+  }
+  const banner = await getBanner();
+  if (!banner) {
+    reply.send({});
+    return;
+  }
+  // Only expose what the client renders — omit updatedBy (admin email).
+  reply.send({
+    message: banner.message,
+    level: banner.level,
+    dismissible: banner.dismissible,
+    updatedAt: banner.updatedAt,
+  });
 });
 
 // ---------------------------------------------------------------------------

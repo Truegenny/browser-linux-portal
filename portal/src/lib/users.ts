@@ -21,6 +21,7 @@ const DESKTOP_FILE = path.join(CADDY_DIR, 'desktop.users');
 const ADMINS_FILE = path.join(CADDY_DIR, 'admins.users');
 const SHARED_FILE = path.join(CADDY_DIR, 'shared.ports');
 const SHARING_ALLOWED_FILE = path.join(CADDY_DIR, 'sharing-allowed.users');
+const BANNER_FILE = path.join(CADDY_DIR, 'banner.json');
 
 export type WorkspaceTier = 'terminal' | 'desktop';
 
@@ -216,6 +217,84 @@ export async function setSharingAllowed(
       await writeSharedFile(cleaned);
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// banner.json — a single site-wide announcement banner shown to all signed-in
+// users on every page (rendered client-side from GET /api/banner). Managed by
+// admins from /admin/banner. Use cases: maintenance windows, forced-reboot
+// notices, tips. `level` drives the colour; `dismissible` lets info/tips be
+// dismissed (per-user, via localStorage keyed to `updatedAt`) while a critical
+// maintenance notice can be pinned. Editing the message bumps `updatedAt`, so
+// a changed banner re-appears for everyone who had dismissed the previous one.
+// ---------------------------------------------------------------------------
+export type BannerLevel = 'info' | 'warning' | 'critical';
+
+export interface Banner {
+  message: string;
+  level: BannerLevel;
+  dismissible: boolean;
+  updatedAt: string;     // ISO timestamp; doubles as the dismissal key
+  updatedBy?: string;    // admin email, for the admin view only
+}
+
+function coerceLevel(v: unknown): BannerLevel {
+  return v === 'warning' || v === 'critical' ? v : 'info';
+}
+
+// Returns the active banner, or null if none is set / the file is empty or
+// malformed. Tolerant by design — a broken banner.json must never 500 a page.
+export async function getBanner(): Promise<Banner | null> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(BANNER_FILE, 'utf8');
+  } catch (e: any) {
+    if (e.code === 'ENOENT') return null;
+    return null;
+  }
+  try {
+    const b = JSON.parse(raw);
+    const message = typeof b?.message === 'string' ? b.message.trim() : '';
+    if (!message) return null;
+    return {
+      message,
+      level: coerceLevel(b.level),
+      dismissible: b.dismissible !== false,
+      updatedAt: typeof b.updatedAt === 'string' ? b.updatedAt : '',
+      updatedBy: typeof b.updatedBy === 'string' ? b.updatedBy : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function setBanner(args: {
+  message: string;
+  level: string;
+  dismissible: boolean;
+  updatedBy?: string;
+}): Promise<void> {
+  const message = args.message.trim();
+  if (!message) throw new Error('Banner message is empty');
+  if (message.length > 2000) throw new Error('Banner message too long (max 2000 chars)');
+  const payload: Banner = {
+    message,
+    level: coerceLevel(args.level),
+    dismissible: args.dismissible,
+    updatedAt: new Date().toISOString(),
+    updatedBy: args.updatedBy,
+  };
+  await fs.writeFile(BANNER_FILE, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+}
+
+export async function clearBanner(): Promise<void> {
+  // Truncate to an empty message rather than unlink — getBanner() treats an
+  // empty message as "no banner", and keeping the file avoids ENOENT churn.
+  await fs.writeFile(
+    BANNER_FILE,
+    JSON.stringify({ message: '', level: 'info', dismissible: true, updatedAt: '' }, null, 2) + '\n',
+    'utf8',
+  );
 }
 
 export async function setExtraAdmin(
