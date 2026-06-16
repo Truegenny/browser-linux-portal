@@ -66,6 +66,23 @@ export function renderDashboard(args: {
       <dt>Tier</dt><dd>${tierBadge}</dd>
     </dl>`;
 
+  // Explain the Recreate button inline (it only appears when a workspace
+  // exists). Restart reboots the same container and keeps everything;
+  // Recreate rebuilds on the latest image and only preserves the home volume.
+  const recreateNote =
+    status === 'absent'
+      ? ''
+      : `
+    <details class="card-note" style="margin-top:14px;">
+      <summary class="muted small"><strong>Restart</strong> vs <strong>Recreate</strong> — what's kept?</summary>
+      <div class="muted small" style="margin-top:8px;line-height:1.5;">
+        <p style="margin:0 0 8px;"><strong>Restart</strong> reboots the same container. Everything is kept — use it for a quick reboot.</p>
+        <p style="margin:0 0 8px;"><strong>Recreate</strong> rebuilds your workspace on the latest image (this is how you pick up workspace updates). It keeps and loses:</p>
+        <p style="margin:0 0 4px;">✅ <strong>Kept:</strong> everything in your home directory <code>/home/node</code> — repos, files, dotfiles, configs, and <code>~/.claude</code>. This lives in your named volume <code>${esc(workspace.volumeName)}</code> and survives.</p>
+        <p style="margin:0;">❌ <strong>Lost:</strong> anything outside your home directory — system packages installed with <code>sudo apt</code>, global npm tools (<code>npm i -g</code>), files written to <code>/etc</code>, <code>/opt</code>, etc., and any running processes. Re-run those after recreating. Tip: install global npm tools under <code>~</code> so they persist.</p>
+      </div>
+    </details>`;
+
   const tip = `
     <p class="tip">First time? Open the terminal and run <code>claude /login</code> to
     authenticate Claude Code in your browser. After that <code>claude</code> works
@@ -240,6 +257,7 @@ cross-user access is impossible.
           </div>
           <div class="actions">${actions}</div>
         </div>
+        ${recreateNote}
       </div>
       ${tip}
       ${webappCard}
