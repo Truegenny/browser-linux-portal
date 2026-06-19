@@ -173,6 +173,20 @@ export async function ensureWorkspace(
       MemorySwap: memBytes,
       NanoCpus: nanoCpus,
       PidsLimit: 512,
+      // /dev/shm. Docker defaults this to 64 MB, which is far too small for
+      // Chromium: it stores renderer<->browser shared-memory IPC and rendered
+      // tiles here, and a heavy page (e.g. driving a big SPA via Playwright)
+      // exhausts 64 MB and the renderer SIGABRTs — surfacing as Playwright
+      // "Target crashed" / "page.goto: Page crashed", then a cascade of
+      // relaunches, lost auth context, and locator timeouts. 512 MB clears it.
+      // NB: this is a real /dev/shm (tmpfs), so users do NOT need
+      // --disable-dev-shm-usage — and shouldn't use it here, since that would
+      // push shared memory onto the swapless memory cgroup and trade shm
+      // crashes for OOM-kills. Chromium still needs --no-sandbox (this
+      // container has no SYS_ADMIN and no-new-privileges, so its sandbox can't
+      // initialize). Heavy runs may still hit the per-tier RAM cap (2g/3g);
+      // those users want the desktop tier or a higher cap.
+      ShmSize: parseMemory(config.workspaceShmSize),
       SecurityOpt: ['no-new-privileges:true'],
       // /tmp is deliberately NOT a tmpfs. A tmpfs is RAM-backed and counts
       // against the Memory cgroup cap, so a size-capped /tmp (we had 256m)

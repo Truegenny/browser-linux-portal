@@ -111,6 +111,9 @@ services:
       WORKSPACE_NETWORK: workspace-net
       WORKSPACE_MEMORY_TERMINAL: ${WORKSPACE_MEMORY_TERMINAL:-2g}
       WORKSPACE_MEMORY_DESKTOP: ${WORKSPACE_MEMORY_DESKTOP:-3g}
+      # /dev/shm per workspace. Docker default 64m crashes Chromium/Playwright
+      # renderers; 512m clears it. See dockerctl.ts ShmSize.
+      WORKSPACE_SHM_SIZE: ${WORKSPACE_SHM_SIZE:-512m}
       WORKSPACE_CPUS: ${WORKSPACE_CPUS:-1.5}
       WORKSPACE_IDLE_HOURS: ${WORKSPACE_IDLE_HOURS:-2}
       # Bootstrap admin allowlist (emails). The canonical signal is the
