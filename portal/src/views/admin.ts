@@ -70,7 +70,7 @@ export function renderAdmin(args: {
              title="Open ttyd inside ws-${esc(w.user)}. Shares the user's PTY — they'll see your input if they're also connected.">Terminal</a>
           <a class="btn-ghost" href="/admin/files/${esc(w.user)}" target="_blank" rel="noopener"
              title="Browse files under /home/node via docker exec (read-only download).">Files</a>
-          ${w.containerTier === 'desktop'
+          ${w.containerTier && w.containerTier !== 'terminal'
             ? `<a class="btn-ghost" href="/admin/term/${esc(w.user)}/desktop/" target="_blank" rel="noopener"
                  title="Open KasmVNC for ws-${esc(w.user)}. Shares the user's X session.">Desktop</a>`
             : ''}
@@ -129,12 +129,17 @@ export function renderAdminUsers(args: {
 }): string {
   const { user, users, extraAdmins, envAdmins, hasAdminGroup } = args;
 
+  const tierOption = (current: WorkspaceTier, value: WorkspaceTier, label: string) =>
+    `<option value="${value}"${current === value ? ' selected' : ''}>${label}</option>`;
+
   const rows = users.map((u) => {
     const isSelf = u.username === user;
     const tierBadge =
-      u.tier === 'desktop'
-        ? '<span class="role" title="GUI enabled — 3 GB RAM">desktop</span>'
-        : '<span class="muted small" title="ttyd + files only — 2 GB RAM">terminal</span>';
+      u.tier === 'power'
+        ? '<span class="role" title="KDE Plasma + full Playwright (Ubuntu image) — 8 GB RAM">power</span>'
+        : u.tier === 'desktop'
+          ? '<span class="role" title="XFCE lite GUI — 3 GB RAM">desktop</span>'
+          : '<span class="muted small" title="ttyd + files only — 2 GB RAM">terminal</span>';
     const wsBadge = u.hasWorkspace
       ? '<span class="badge st-running" title="Container exists for this user">yes</span>'
       : '<span class="muted small" title="No container yet — user hasn’t signed in or hasn’t clicked Create">—</span>';
@@ -142,14 +147,19 @@ export function renderAdminUsers(args: {
       ? '<span class="role" title="User can share webapps from their dashboard">on</span>'
       : '<span class="muted small" title="User cannot share — Share buttons hidden from dashboard">off</span>';
 
+    // Single 3-way tier selector. The power tier swaps the workspace to the
+    // Ubuntu/KDE/Playwright image; switching between any tiers takes effect on
+    // the next workspace restart (the home volume is preserved).
     const desktopToggle =
-      u.tier === 'desktop'
-        ? `<form method="post" action="/admin/users/${esc(u.username)}/disable-desktop" style="display:inline">
-             <button title="Drop to terminal-only on next workspace restart.">Disable desktop</button>
-           </form>`
-        : `<form method="post" action="/admin/users/${esc(u.username)}/enable-desktop" style="display:inline">
-             <button title="Enable GUI on next workspace restart.">Enable desktop</button>
-           </form>`;
+      `<form method="post" action="/admin/users/${esc(u.username)}/tier" style="display:inline-flex;gap:4px;align-items:center"
+             title="Change tier. Applies on the user's next workspace restart; the home volume is preserved across the swap.">
+         <select name="tier" aria-label="Tier for ${esc(u.username)}">
+           ${tierOption(u.tier, 'terminal', 'terminal')}
+           ${tierOption(u.tier, 'desktop', 'desktop')}
+           ${tierOption(u.tier, 'power', 'power')}
+         </select>
+         <button>Set tier</button>
+       </form>`;
 
     const sharingToggle =
       u.sharingAllowed

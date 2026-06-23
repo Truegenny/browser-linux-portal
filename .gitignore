@@ -13,6 +13,7 @@ portal/public/favicon.ico
 caddy/users.users
 caddy/admins.users
 caddy/desktop.users
+caddy/power.users
 caddy/shared.ports
 caddy/sharing-allowed.users
 caddy/banner.json

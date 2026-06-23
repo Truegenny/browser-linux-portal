@@ -147,7 +147,10 @@ portal/                — Fastify + TS app
       version.ts       — reads package.json at runtime
     views/             — server-rendered HTML (template literals)
   public/styles.css    — single dark-themed stylesheet
-workspace-image/       — Dockerfile + entrypoint for ws-* containers
+workspace-image/       — Dockerfile + entrypoint for terminal/desktop tiers
+                         (Debian 12; GUI gated by ENABLE_DESKTOP)
+workspace-image-power/ — Dockerfile + entrypoint for the POWER tier
+                         (Ubuntu 24.04 + KDE Plasma + full Playwright)
 scripts/               — build-workspace-image.sh, idle-stop.sh
 docs/
   DEPLOY.md            — Ubuntu/Azure deploy runbook (start here)
@@ -207,26 +210,46 @@ of a portal-elected admin takes effect on the next page load. Demotion
 via Entra group only takes effect on token refresh (cookie lifetime is
 8h by default).
 
-## User tiers (terminal vs desktop)
+## User tiers (terminal / desktop / power)
 
-Each user is one of two tiers, picked at user creation in `/admin/users`
-and editable per-user from there:
+Each user is one of three tiers, editable per-user from `/admin/users`
+(a single tier dropdown → `POST /admin/users/:target/tier`):
 
 - **terminal** (default) — ttyd + filebrowser only. 2 GB RAM. ~80 MB idle.
-- **desktop** — adds KasmVNC + XFCE4 + Firefox. 3 GB RAM. ~250 MB idle.
+- **desktop** — adds KasmVNC + XFCE4 + Firefox (lite GUI). 3 GB RAM. ~250 MB idle.
+- **power** — *separate Ubuntu 24.04 image* (`claudelab-workspace-power`):
+  KDE Plasma + Google Chrome + the full Playwright suite
+  (chromium/firefox/webkit) + computer-use tooling
+  (`xdotool`/`scrot`/`wmctrl`/`imagemagick`). For Claude cowork + Playwright
+  power users. 8 GB RAM, 4 CPUs, 2 GB `/dev/shm` by default. Rare, opt-in.
 
-The tier is stored in `caddy/desktop.users` (plain list, presence = desktop).
-Caddy doesn't read it — it's portal-side state. The portal sets
-`ENABLE_DESKTOP=0|1` env on the workspace container at create time, and
-`entrypoint.sh` wraps the KasmVNC/XFCE startup in an `if` against it.
-The same workspace image serves both tiers — terminal users just don't
-start the X server.
+**Tier storage.** terminal/desktop membership lives in
+`caddy/desktop.users`; power membership in `caddy/power.users`. Both are
+plain one-username-per-line lists, gitignored, portal-side only (Caddy
+never reads them). `getUserTier` resolves with **power > desktop >
+terminal** precedence; `setUserTier` reconciles both files so a user is
+never in two at once. The portal sets `ENABLE_DESKTOP=0|1` (0 only for
+terminal) and picks the image + memory/shm/CPU caps per tier in
+`dockerctl.ts::tierResources`.
+
+**Two images, not one.** terminal + desktop share the Debian
+`workspace-image/` (one image, GUI gated by `ENABLE_DESKTOP`). Power uses
+the distinct Ubuntu `workspace-image-power/`. Both normalize to the same
+identity (`node` user, uid 1000, `/home/node`) so the **same
+`ws-<user>-home` volume works across a tier switch** — a user moving
+desktop→power keeps their data. (Ubuntu's stock uid-1000 `ubuntu` user is
+renamed to `node` in the power Dockerfile for exactly this reason.)
 
 Tier changes are **lazy**: the running container keeps its current tier
 until the user (or admin) stops + starts it. The portal detects the
-mismatch on the next start and destroys + recreates the container,
-preserving the home volume. The current container's tier is shown in
-`/admin` → Workspaces → Tier column.
+mismatch on the next start (`readContainerTier` vs requested tier) and
+destroys + recreates the container, preserving the home volume. The
+current container's tier is shown in `/admin` → Workspaces → Tier column.
+
+> Switching to/from **power** swaps the whole image (Debian↔Ubuntu) on that
+> recreate. Home data survives; anything in the container layer (sudo
+> apt-installed packages, global npm tools) does not — same caveat as
+> Recreate, just also crossing distros.
 
 ## Key knobs (`.env` → compose env)
 
@@ -239,14 +262,23 @@ preserving the home volume. The current container's tier is shown in
 - `OAUTH2_PROXY_EMAIL_DOMAINS` — comma-separated allowlist (e.g. `ntiva.com`)
 - `ADMIN_GROUP_OID` — Entra security group whose members get admin
 - `ADMIN_USERS` — bootstrap admin allowlist by email (fallback / first-sign-in)
-- `WORKSPACE_MEMORY_TERMINAL` (2g) / `WORKSPACE_MEMORY_DESKTOP` (3g) — per-tier RAM caps
-- `WORKSPACE_CPUS` / `WORKSPACE_IDLE_HOURS` — per-container limits
+- `WORKSPACE_MEMORY_TERMINAL` (2g) / `WORKSPACE_MEMORY_DESKTOP` (3g) / `WORKSPACE_MEMORY_POWER` (8g) — per-tier RAM caps
+- `WORKSPACE_IMAGE` (Debian terminal/desktop) / `WORKSPACE_IMAGE_POWER` (Ubuntu power image)
+- `WORKSPACE_SHM_SIZE` (512m) / `WORKSPACE_SHM_SIZE_POWER` (2g) — `/dev/shm` per tier
+- `WORKSPACE_CPUS` (1.5) / `WORKSPACE_CPUS_POWER` (4) — CPU caps (power gets its own)
+- `WORKSPACE_IDLE_HOURS` — per-container idle limit
 
 ## Common commands (inside the project root)
 
 ```bash
 # Rebuild workspace image (after Dockerfile changes); ~5-10 min
 docker compose build --no-cache workspace-image
+
+# Rebuild the POWER workspace image (Ubuntu/KDE/Playwright); ~10-20 min, big
+docker compose build --no-cache workspace-image-power
+
+# Standard deploy that doesn't use the power tier can skip the heavy build:
+docker compose build workspace-image portal
 
 # Apply Caddyfile changes without restarting Caddy
 docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
@@ -342,6 +374,31 @@ owns identity now.)
 - User: `node` (uid 1000) with passwordless sudo
 - Entrypoint: `tini → entrypoint.sh → (filebrowser bg) + (KasmVNC+XFCE bg) + (ttyd fg)`
 - Image size with GUI ~2 GB; runtime RAM ~250 MB idle, ~1 GB with Firefox open.
+
+## Power image contents (`claudelab-workspace-power:latest`)
+
+Built from `workspace-image-power/`. Same three-service model + ports
+(7681/7682/7683) and the same `node`/uid-1000/`/home/node` identity as the
+Debian image (so volumes are interchangeable across tiers), but:
+
+- Base: `ubuntu:24.04` + Node 22 (NodeSource). Ubuntu's stock uid-1000
+  `ubuntu` user is renamed to `node` with `/home/node` (see Dockerfile §1).
+- Desktop: **KDE Plasma** (X11) over KasmVNC instead of XFCE. Launched via
+  `startplasma-x11` in entrypoint.sh; sddm is present but never started
+  (no init in-container). Default resolution 1920×1080.
+- Browsers: **Google Chrome** (`google-chrome-stable`) + the full
+  **Playwright** suite — chromium, firefox, webkit — installed with
+  `playwright install --with-deps` to `PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright`
+  (baked into the image layer, not the home volume).
+- Computer-use tooling: `xdotool`, `wmctrl`, `scrot`, `imagemagick`,
+  `xclip`, `x11-apps`. `DISPLAY=:1` is exported in `.bashrc` so headed
+  browsers / xdotool from the terminal render onto the visible desktop.
+- Same hardened posture as the lite image — `no-new-privileges` + dropped
+  caps — so Chromium/Chrome **must** run `--no-sandbox`. The portal gives
+  this tier a real 2 GB `/dev/shm`, so do **not** use
+  `--disable-dev-shm-usage`.
+- Image size ~4–5 GB; build ~10–20 min. Runtime RAM is the reason for the
+  8 GB cap — KDE + multiple headed Chromium contexts.
 
 ## Things explicitly NOT to do
 

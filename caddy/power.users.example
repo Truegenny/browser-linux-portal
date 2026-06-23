@@ -1,0 +1,9 @@
+# Users on the POWER tier. Managed by the portal /admin/users UI.
+# One username per line. Caddy never reads this file — it's portal-side state.
+#
+# Presence here wins over desktop.users. A power-tier workspace runs the
+# separate Ubuntu 24.04 image (claudelab-workspace-power:latest): KDE Plasma,
+# Google Chrome, the full Playwright suite (chromium/firefox/webkit), and
+# computer-use tooling (xdotool/scrot/wmctrl) — intended for Claude cowork +
+# Playwright power users. It gets the larger WORKSPACE_MEMORY_POWER /
+# WORKSPACE_SHM_SIZE_POWER / WORKSPACE_CPUS_POWER allotment.

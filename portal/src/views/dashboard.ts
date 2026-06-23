@@ -14,11 +14,17 @@ export function renderDashboard(args: {
 }): string {
   const { user, email, isAdmin, workspace, listeningPorts, tier, sharedPorts, sharingAllowed } = args;
   const status = workspace.status;
-  const desktopEnabled = tier === 'desktop';
+  // Both desktop (XFCE lite) and power (KDE Plasma) tiers expose a GUI.
+  const desktopEnabled = tier === 'desktop' || tier === 'power';
 
+  const tierTitle =
+    tier === 'power'
+      ? 'KDE Plasma + full Playwright (chromium/firefox/webkit) — 8 GB RAM'
+      : tier === 'desktop'
+        ? 'XFCE lite GUI — 3 GB RAM'
+        : '2 GB RAM, terminal only — ask your admin for the desktop or power tier to get a GUI.';
   const statusBadge = `<span class="badge st-${status}">${status}</span>`;
-  const tierBadge =
-    `<span class="badge st-running" title="${desktopEnabled ? '3 GB RAM' : '2 GB RAM — request the GUI from your admin to upgrade.'}">${tier}</span>`;
+  const tierBadge = `<span class="badge st-running" title="${tierTitle}">${tier}</span>`;
 
   const desktopLink = desktopEnabled
     ? `<a class="cta secondary" href="/u/${esc(user)}/desktop/" target="_blank" rel="noopener">Open desktop →</a>`

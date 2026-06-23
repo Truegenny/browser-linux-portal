@@ -108,13 +108,19 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 3000
       WORKSPACE_IMAGE: ${WORKSPACE_IMAGE:-claudelab-workspace:latest}
+      # Power tier runs a separate image (Ubuntu + KDE Plasma + full Playwright).
+      WORKSPACE_IMAGE_POWER: ${WORKSPACE_IMAGE_POWER:-claudelab-workspace-power:latest}
       WORKSPACE_NETWORK: workspace-net
       WORKSPACE_MEMORY_TERMINAL: ${WORKSPACE_MEMORY_TERMINAL:-2g}
       WORKSPACE_MEMORY_DESKTOP: ${WORKSPACE_MEMORY_DESKTOP:-3g}
+      WORKSPACE_MEMORY_POWER: ${WORKSPACE_MEMORY_POWER:-8g}
       # /dev/shm per workspace. Docker default 64m crashes Chromium/Playwright
-      # renderers; 512m clears it. See dockerctl.ts ShmSize.
+      # renderers; 512m clears it. Power tier runs several headed browsers at
+      # once, so it gets a larger shm. See dockerctl.ts ShmSize.
       WORKSPACE_SHM_SIZE: ${WORKSPACE_SHM_SIZE:-512m}
+      WORKSPACE_SHM_SIZE_POWER: ${WORKSPACE_SHM_SIZE_POWER:-2g}
       WORKSPACE_CPUS: ${WORKSPACE_CPUS:-1.5}
+      WORKSPACE_CPUS_POWER: ${WORKSPACE_CPUS_POWER:-4}
       WORKSPACE_IDLE_HOURS: ${WORKSPACE_IDLE_HOURS:-2}
       # Bootstrap admin allowlist (emails). The canonical signal is the
       # Entra groups claim — see ADMIN_GROUP_OID — but this env is the
@@ -154,5 +160,26 @@ services:
     restart: "no"
     # Override the workspace image's ENTRYPOINT (which would launch ttyd) so
     # this builder container exits 0 immediately after the image is built.
+    entrypoint: ["true"]
+    command: []
+
+  # ---------------------------------------------------------------------
+  # Power workspace image builder
+  # ---------------------------------------------------------------------
+  # Same one-shot pattern as workspace-image, for the power tier's separate
+  # image (Ubuntu 24.04 + KDE Plasma + the full Playwright browser suite).
+  # Much heavier to build (~10-20 min, several GB) — it's deliberately a
+  # distinct service so a standard deploy that doesn't use the power tier
+  # can skip it with:  docker compose build workspace-image portal
+  #
+  # Manual rebuild after Dockerfile changes:
+  #   docker compose build workspace-image-power
+  workspace-image-power:
+    image: ${WORKSPACE_IMAGE_POWER:-claudelab-workspace-power:latest}
+    pull_policy: build
+    build:
+      context: ./workspace-image-power
+    container_name: workspace-image-power-builder
+    restart: "no"
     entrypoint: ["true"]
     command: []

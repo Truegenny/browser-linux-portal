@@ -96,17 +96,53 @@ export async function getWorkspace(user: string): Promise<WorkspaceInfo> {
   };
 }
 
+// Both desktop and power tiers start the GUI; only terminal skips it.
 function tierEnabledDesktop(tier: WorkspaceTier): string {
-  return tier === 'desktop' ? '1' : '0';
+  return tier === 'terminal' ? '0' : '1';
 }
 
 function readContainerTier(ins: Docker.ContainerInspectInfo): WorkspaceTier {
-  // Prefer the label (set at create time), fall back to the env var.
+  // Prefer the label (set at create time), fall back to the env var. The env
+  // fallback can't distinguish desktop from power (both ENABLE_DESKTOP=1), but
+  // every container the portal creates carries the label, so the fallback only
+  // affects legacy pre-tier-label containers — all of which are the Debian
+  // desktop/terminal image, so 'desktop' is the right guess there.
   const labelTier = ins.Config.Labels?.[LABEL_TIER];
-  if (labelTier === 'desktop' || labelTier === 'terminal') return labelTier;
+  if (labelTier === 'desktop' || labelTier === 'terminal' || labelTier === 'power') {
+    return labelTier;
+  }
   const env = ins.Config.Env ?? [];
   const found = env.find((e) => e.startsWith(`${ENV_ENABLE_DESKTOP}=`));
   return found?.endsWith('=1') ? 'desktop' : 'terminal';
+}
+
+// Resolve the image + resource caps for a tier. Power uses a different image
+// (Ubuntu/KDE/Playwright) and larger memory/shm/CPU; terminal and desktop
+// share the Debian image and differ only in memory.
+function tierResources(tier: WorkspaceTier): {
+  image: string;
+  memBytes: number;
+  shmBytes: number;
+  nanoCpus: number;
+} {
+  if (tier === 'power') {
+    return {
+      image: config.workspaceImagePower,
+      memBytes: parseMemory(config.workspaceMemoryPower),
+      shmBytes: parseMemory(config.workspaceShmSizePower),
+      nanoCpus: Math.floor(Number(config.workspaceCpusPower) * 1e9),
+    };
+  }
+  return {
+    image: config.workspaceImage,
+    memBytes: parseMemory(
+      tier === 'desktop'
+        ? config.workspaceMemoryDesktop
+        : config.workspaceMemoryTerminal,
+    ),
+    shmBytes: parseMemory(config.workspaceShmSize),
+    nanoCpus: Math.floor(Number(config.workspaceCpus) * 1e9),
+  };
 }
 
 export async function ensureWorkspace(
@@ -134,18 +170,13 @@ export async function ensureWorkspace(
     await docker.getContainer(cName).remove({ force: true });
   }
 
-  // Create container fresh.
-  const memSpec =
-    opts.tier === 'desktop'
-      ? config.workspaceMemoryDesktop
-      : config.workspaceMemoryTerminal;
-  const memBytes = parseMemory(memSpec);
-  const nanoCpus = Math.floor(Number(config.workspaceCpus) * 1e9);
+  // Create container fresh. Image + resource caps are tier-dependent.
+  const { image, memBytes, shmBytes, nanoCpus } = tierResources(opts.tier);
   const nowIso = new Date().toISOString();
 
   await docker.createContainer({
     name: cName,
-    Image: config.workspaceImage,
+    Image: image,
     Hostname: cName,
     Env: [
       `WS_USER=${user}`,
@@ -186,7 +217,7 @@ export async function ensureWorkspace(
       // container has no SYS_ADMIN and no-new-privileges, so its sandbox can't
       // initialize). Heavy runs may still hit the per-tier RAM cap (2g/3g);
       // those users want the desktop tier or a higher cap.
-      ShmSize: parseMemory(config.workspaceShmSize),
+      ShmSize: shmBytes,
       SecurityOpt: ['no-new-privileges:true'],
       // /tmp is deliberately NOT a tmpfs. A tmpfs is RAM-backed and counts
       // against the Memory cgroup cap, so a size-capped /tmp (we had 256m)

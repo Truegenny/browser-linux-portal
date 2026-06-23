@@ -19,13 +19,20 @@ import { randomUUID } from 'node:crypto';
 
 const CADDY_DIR = '/caddy';
 const DESKTOP_FILE = path.join(CADDY_DIR, 'desktop.users');
+const POWER_FILE = path.join(CADDY_DIR, 'power.users');
 const ADMINS_FILE = path.join(CADDY_DIR, 'admins.users');
 const SHARED_FILE = path.join(CADDY_DIR, 'shared.ports');
 const SHARING_ALLOWED_FILE = path.join(CADDY_DIR, 'sharing-allowed.users');
 const BANNER_FILE = path.join(CADDY_DIR, 'banner.json');
 const BUGS_FILE = path.join(CADDY_DIR, 'bug-reports.json');
 
-export type WorkspaceTier = 'terminal' | 'desktop';
+// Three tiers, in ascending resource order:
+//   terminal — ttyd + filebrowser only (Debian image, no GUI started)
+//   desktop  — adds the XFCE4 lite GUI         (Debian image, ENABLE_DESKTOP=1)
+//   power    — KDE Plasma + full Playwright     (Ubuntu power image)
+// Membership lives in two plain files: presence in power.users wins, else
+// presence in desktop.users, else terminal. See getUserTier.
+export type WorkspaceTier = 'terminal' | 'desktop' | 'power';
 
 // Lowercase a-z, digits, with `.`, `-`, `_`. Must start with [a-z0-9].
 // 1..41 chars total. Matches the regex baked into Caddyfile's path_regexp
@@ -66,10 +73,19 @@ async function readPlainList(file: string): Promise<string[]> {
   return out;
 }
 
-async function writePlainList(file: string, names: string[]): Promise<void> {
-  const header =
-    '# Users with the desktop GUI enabled. Managed by the portal /admin/users UI.\n' +
-    '# One username per line. Caddy never reads this file.\n';
+const DESKTOP_HEADER =
+  '# Users with the desktop (lite/XFCE) GUI enabled. Managed by the portal\n' +
+  '# /admin/users UI. One username per line. Caddy never reads this file.\n';
+const POWER_HEADER =
+  '# Users on the POWER tier (Ubuntu image: KDE Plasma + full Playwright).\n' +
+  '# Managed by the portal /admin/users UI. Presence here wins over\n' +
+  '# desktop.users. One username per line. Caddy never reads this file.\n';
+
+async function writePlainList(
+  file: string,
+  names: string[],
+  header: string,
+): Promise<void> {
   const body = Array.from(new Set(names))
     .sort((a, b) => a.localeCompare(b))
     .join('\n');
@@ -80,20 +96,43 @@ export async function listDesktopUsers(): Promise<string[]> {
   return readPlainList(DESKTOP_FILE);
 }
 
-export async function getUserTier(username: string): Promise<WorkspaceTier> {
-  const desktop = await readPlainList(DESKTOP_FILE);
-  return desktop.includes(username) ? 'desktop' : 'terminal';
+export async function listPowerUsers(): Promise<string[]> {
+  return readPlainList(POWER_FILE);
 }
 
+// Resolve a user's tier. Power wins over desktop wins over terminal so a user
+// can never be ambiguously in two tiers at once even if both files name them.
+export async function getUserTier(username: string): Promise<WorkspaceTier> {
+  const [power, desktop] = await Promise.all([
+    readPlainList(POWER_FILE),
+    readPlainList(DESKTOP_FILE),
+  ]);
+  if (power.includes(username)) return 'power';
+  if (desktop.includes(username)) return 'desktop';
+  return 'terminal';
+}
+
+// Set a user's tier by reconciling membership across both files: a user is in
+// exactly one of {power.users, desktop.users, neither}. Writing 'power' also
+// removes them from desktop.users (and vice versa) so the two files never both
+// name the same user.
 export async function setUserTier(
   username: string,
   tier: WorkspaceTier,
 ): Promise<void> {
   if (!isValidUsername(username)) throw new Error('Invalid username');
-  const desktop = await readPlainList(DESKTOP_FILE);
-  const filtered = desktop.filter((u) => u !== username);
-  if (tier === 'desktop') filtered.push(username);
-  await writePlainList(DESKTOP_FILE, filtered);
+  const [power, desktop] = await Promise.all([
+    readPlainList(POWER_FILE),
+    readPlainList(DESKTOP_FILE),
+  ]);
+  const powerOut = power.filter((u) => u !== username);
+  const desktopOut = desktop.filter((u) => u !== username);
+  if (tier === 'power') powerOut.push(username);
+  if (tier === 'desktop') desktopOut.push(username);
+  await Promise.all([
+    writePlainList(POWER_FILE, powerOut, POWER_HEADER),
+    writePlainList(DESKTOP_FILE, desktopOut, DESKTOP_HEADER),
+  ]);
 }
 
 // ---------------------------------------------------------------------------

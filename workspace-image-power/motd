@@ -1,0 +1,18 @@
+
+  ┌────────────────────────────────────────────────────────┐
+  │  ClaudeLab Workspace — POWER tier                        │
+  │                                                          │
+  │  • Ubuntu 24.04 + Node 22 + Claude Code                  │
+  │  • KDE Plasma desktop at  /u/<you>/desktop/              │
+  │  • Playwright: chromium, firefox & webkit pre-installed  │
+  │  • Google Chrome + xdotool/scrot/wmctrl for cowork       │
+  │  • Your home directory persists across restarts          │
+  │                                                          │
+  │  Browsers: launch with --no-sandbox (hardened sandbox).  │
+  │  DISPLAY=:1 is the KDE/VNC screen — headed browsers and  │
+  │  computer-use tools render there.                        │
+  │                                                          │
+  │  Run:  claude /login   to authenticate                   │
+  │  sudo is passwordless. Mess things up freely.            │
+  └────────────────────────────────────────────────────────┘
+

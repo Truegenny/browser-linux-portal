@@ -25,6 +25,7 @@ import {
   setUserTier,
   getUserTier,
   listDesktopUsers,
+  listPowerUsers,
   listExtraAdminEmails,
   setExtraAdmin,
   listSharedPorts,
@@ -387,25 +388,31 @@ app.get('/admin/logs/:user', async (req, reply) => {
 app.get('/admin/users', async (req, reply) => {
   const u = await requireAdmin(req, reply);
   if (!u) return;
-  const [workspaces, desktopUsers, extraAdmins, sharingUsers] =
+  const [workspaces, desktopUsers, powerUsers, extraAdmins, sharingUsers] =
     await Promise.all([
       listWorkspaces(),
       listDesktopUsers(),
+      listPowerUsers(),
       listExtraAdminEmails(),
       listSharingAllowed(),
     ]);
   const set = new Set<string>(workspaces.map((w) => w.user));
   desktopUsers.forEach((d) => set.add(d));
+  powerUsers.forEach((p) => set.add(p));
   sharingUsers.forEach((s) => set.add(s));
   const desktopSet = new Set(desktopUsers);
+  const powerSet = new Set(powerUsers);
   const sharingSet = new Set(sharingUsers);
   const users = Array.from(set)
     .sort((a, b) => a.localeCompare(b))
     .map((username) => ({
       username,
-      tier: (desktopSet.has(username) ? 'desktop' : 'terminal') as
-        | 'desktop'
-        | 'terminal',
+      // Power wins over desktop wins over terminal — mirrors getUserTier.
+      tier: (powerSet.has(username)
+        ? 'power'
+        : desktopSet.has(username)
+          ? 'desktop'
+          : 'terminal') as 'power' | 'desktop' | 'terminal',
       hasWorkspace: workspaces.some((w) => w.user === username),
       sharingAllowed: sharingSet.has(username),
     }));
@@ -420,7 +427,11 @@ app.get('/admin/users', async (req, reply) => {
   );
 });
 
-app.post('/admin/users/:target/enable-desktop', async (req, reply) => {
+// Set a user's tier (terminal | desktop | power). Power swaps the workspace
+// to the Ubuntu/KDE/Playwright image; all tier changes take effect on the
+// user's next workspace restart (home volume preserved). Replaces the old
+// enable-desktop/disable-desktop pair.
+app.post('/admin/users/:target/tier', async (req, reply) => {
   const u = await requireAdmin(req, reply);
   if (!u) return;
   const target = (req.params as { target: string }).target;
@@ -428,19 +439,12 @@ app.post('/admin/users/:target/enable-desktop', async (req, reply) => {
     reply.code(400).type('text/plain').send('Invalid username.');
     return;
   }
-  await setUserTier(target, 'desktop');
-  reply.redirect('/admin/users');
-});
-
-app.post('/admin/users/:target/disable-desktop', async (req, reply) => {
-  const u = await requireAdmin(req, reply);
-  if (!u) return;
-  const target = (req.params as { target: string }).target;
-  if (!USERNAME_RE.test(target)) {
-    reply.code(400).type('text/plain').send('Invalid username.');
+  const tier = (req.body as { tier?: string }).tier;
+  if (tier !== 'terminal' && tier !== 'desktop' && tier !== 'power') {
+    reply.code(400).type('text/plain').send('Invalid tier.');
     return;
   }
-  await setUserTier(target, 'terminal');
+  await setUserTier(target, tier);
   reply.redirect('/admin/users');
 });
 
