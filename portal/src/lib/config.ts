@@ -30,7 +30,7 @@ export const config = {
   // KDE + multiple headed browsers under Playwright/cowork, so they get more.
   workspaceMemoryTerminal: env('WORKSPACE_MEMORY_TERMINAL', '2g'),
   workspaceMemoryDesktop: env('WORKSPACE_MEMORY_DESKTOP', '3g'),
-  workspaceMemoryPower: env('WORKSPACE_MEMORY_POWER', '8g'),
+  workspaceMemoryPower: env('WORKSPACE_MEMORY_POWER', '6g'),
   // Size of /dev/shm in each workspace. Docker's default is a tiny 64 MB,
   // which makes Chromium/Playwright renderers SIGABRT ("Target crashed" /
   // "Page crashed") on heavy pages because Chromium backs renderer IPC and

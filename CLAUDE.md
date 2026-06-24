@@ -221,7 +221,7 @@ Each user is one of three tiers, editable per-user from `/admin/users`
   KDE Plasma + Google Chrome + the full Playwright suite
   (chromium/firefox/webkit) + computer-use tooling
   (`xdotool`/`scrot`/`wmctrl`/`imagemagick`). For Claude cowork + Playwright
-  power users. 8 GB RAM, 4 CPUs, 2 GB `/dev/shm` by default. Rare, opt-in.
+  power users. 6 GB RAM, 4 CPUs, 2 GB `/dev/shm` by default. Rare, opt-in.
 
 **Tier storage.** terminal/desktop membership lives in
 `caddy/desktop.users`; power membership in `caddy/power.users`. Both are
@@ -262,7 +262,7 @@ current container's tier is shown in `/admin` → Workspaces → Tier column.
 - `OAUTH2_PROXY_EMAIL_DOMAINS` — comma-separated allowlist (e.g. `ntiva.com`)
 - `ADMIN_GROUP_OID` — Entra security group whose members get admin
 - `ADMIN_USERS` — bootstrap admin allowlist by email (fallback / first-sign-in)
-- `WORKSPACE_MEMORY_TERMINAL` (2g) / `WORKSPACE_MEMORY_DESKTOP` (3g) / `WORKSPACE_MEMORY_POWER` (8g) — per-tier RAM caps
+- `WORKSPACE_MEMORY_TERMINAL` (2g) / `WORKSPACE_MEMORY_DESKTOP` (3g) / `WORKSPACE_MEMORY_POWER` (6g) — per-tier RAM caps
 - `WORKSPACE_IMAGE` (Debian terminal/desktop) / `WORKSPACE_IMAGE_POWER` (Ubuntu power image)
 - `WORKSPACE_SHM_SIZE` (512m) / `WORKSPACE_SHM_SIZE_POWER` (2g) — `/dev/shm` per tier
 - `WORKSPACE_CPUS` (1.5) / `WORKSPACE_CPUS_POWER` (4) — CPU caps (power gets its own)
@@ -406,7 +406,7 @@ Debian image (so volumes are interchangeable across tiers), but:
   `chromiumSandbox: false`) in the script. The portal gives this tier a real
   2 GB `/dev/shm`, so do **not** use `--disable-dev-shm-usage`.
 - Image size ~4–5 GB; build ~10–20 min. Runtime RAM is the reason for the
-  8 GB cap — KDE + multiple headed Chromium contexts.
+  6 GB cap — KDE + multiple headed Chromium contexts.
 
 ## Things explicitly NOT to do
 

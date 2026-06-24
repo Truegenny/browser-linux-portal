@@ -19,7 +19,7 @@ export function renderDashboard(args: {
 
   const tierTitle =
     tier === 'power'
-      ? 'KDE Plasma + full Playwright (chromium/firefox/webkit) — 8 GB RAM'
+      ? 'KDE Plasma + full Playwright (chromium/firefox/webkit) — 6 GB RAM'
       : tier === 'desktop'
         ? 'XFCE lite GUI — 3 GB RAM'
         : '2 GB RAM, terminal only — ask your admin for the desktop or power tier to get a GUI.';

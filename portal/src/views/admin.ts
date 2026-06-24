@@ -136,7 +136,7 @@ export function renderAdminUsers(args: {
     const isSelf = u.username === user;
     const tierBadge =
       u.tier === 'power'
-        ? '<span class="role" title="KDE Plasma + full Playwright (Ubuntu image) — 8 GB RAM">power</span>'
+        ? '<span class="role" title="KDE Plasma + full Playwright (Ubuntu image) — 6 GB RAM">power</span>'
         : u.tier === 'desktop'
           ? '<span class="role" title="XFCE lite GUI — 3 GB RAM">desktop</span>'
           : '<span class="muted small" title="ttyd + files only — 2 GB RAM">terminal</span>';
