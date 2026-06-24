@@ -396,9 +396,15 @@ Debian image (so volumes are interchangeable across tiers), but:
   `xclip`, `x11-apps`. `DISPLAY=:1` is exported in `.bashrc` so headed
   browsers / xdotool from the terminal render onto the visible desktop.
 - Same hardened posture as the lite image — `no-new-privileges` + dropped
-  caps — so Chromium/Chrome **must** run `--no-sandbox`. The portal gives
-  this tier a real 2 GB `/dev/shm`, so do **not** use
-  `--disable-dev-shm-usage`.
+  caps + no user namespaces — so Chromium/Chrome **must** run `--no-sandbox`
+  (the SUID/userns sandbox can't initialize; without the flag Chrome exits
+  instantly and silently). The Google Chrome launcher is therefore wrapped:
+  `/usr/local/bin/google-chrome-stable` (ahead of `/usr/bin` on PATH) injects
+  `--no-sandbox --test-type`, and `google-chrome.desktop`'s Exec lines are
+  repointed at it, so both the KDE menu icon and terminal/agent launches get
+  the flag. Playwright's own chromium is separate — pass `--no-sandbox` (or
+  `chromiumSandbox: false`) in the script. The portal gives this tier a real
+  2 GB `/dev/shm`, so do **not** use `--disable-dev-shm-usage`.
 - Image size ~4–5 GB; build ~10–20 min. Runtime RAM is the reason for the
   8 GB cap — KDE + multiple headed Chromium contexts.
 

@@ -132,7 +132,21 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends google-chrome-stable; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*; \
-    google-chrome-stable --version
+    /usr/bin/google-chrome-stable --version; \
+    # Chrome can't initialize its sandbox in this hardened container
+    # (no-new-privileges + dropped caps + no user namespaces), so clicking
+    # the KDE icon — which runs `/usr/bin/google-chrome-stable %U` with no
+    # flags — makes it exit instantly and silently. Ship a wrapper EARLIER on
+    # PATH that injects --no-sandbox (the SUID/userns sandbox simply can't run
+    # here; --no-sandbox is mandatory, not optional) and repoint the .desktop
+    # launchers at it, so the menu icon AND terminal/agent invocations both
+    # get the flag. --test-type suppresses the "unsupported flag" infobar.
+    printf '#!/bin/sh\n# Forces --no-sandbox — required in this hardened container; see Dockerfile.\nexec /usr/bin/google-chrome-stable --no-sandbox --test-type "$@"\n' \
+      > /usr/local/bin/google-chrome-stable; \
+    chmod +x /usr/local/bin/google-chrome-stable; \
+    ln -sf /usr/local/bin/google-chrome-stable /usr/local/bin/google-chrome; \
+    sed -i 's#/usr/bin/google-chrome-stable#/usr/local/bin/google-chrome-stable#g' \
+      /usr/share/applications/google-chrome.desktop
 
 # 7) ttyd + filebrowser — arch-aware downloads from upstream releases.
 ARG TARGETARCH
