@@ -110,6 +110,15 @@ RUN set -eux; \
     chmod a+r  /etc/ssl/private/ssl-cert-snakeoil.key; \
     chmod a+r  /etc/ssl/private/ssl-cert-snakeoil.pem 2>/dev/null || true
 
+# 4b) Disable the KDE screen locker system-wide. The node user has no system
+# password (auth is at oauth2-proxy), so a lock screen is an unrecoverable
+# lockout. /etc/xdg is on the session's XDG_CONFIG_DIRS, so this is the
+# default for all users; the entrypoint also writes the per-user copy (which
+# takes precedence) every start.
+RUN set -eux; \
+    printf '[Daemon]\nAutolock=false\nLockOnResume=false\n' \
+      > /etc/xdg/kscreenlockerrc
+
 # 5) Computer-use tooling — what a screen-driving agent (Claude cowork / the
 # computer-use loop) uses to screenshot, click, type, and manage windows on
 # the KasmVNC display.

@@ -395,6 +395,11 @@ Debian image (so volumes are interchangeable across tiers), but:
 - Computer-use tooling: `xdotool`, `wmctrl`, `scrot`, `imagemagick`,
   `xclip`, `x11-apps`. `DISPLAY=:1` is exported in `.bashrc` so headed
   browsers / xdotool from the terminal render onto the visible desktop.
+- **KDE screen locker is disabled** (`kscreenlockerrc` `Autolock=false` +
+  `LockOnResume=false`, both system-wide in `/etc/xdg` and re-written per-user
+  by entrypoint.sh on every start). The `node` user has no system password —
+  auth is at oauth2-proxy — so any lock screen (idle timeout, VNC
+  reconnect) would be an unrecoverable lockout. Don't re-enable it.
 - Same hardened posture as the lite image — `no-new-privileges` + dropped
   caps + no user namespaces — so Chromium/Chrome **must** run `--no-sandbox`
   (the SUID/userns sandbox can't initialize; without the flag Chrome exits

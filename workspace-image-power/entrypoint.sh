@@ -61,8 +61,20 @@ if [[ "${ENABLE_DESKTOP:-0}" == "1" ]]; then
 VNC_PORT="${VNC_PORT:-7683}"
 VNC_RESOLUTION="${VNC_RESOLUTION:-1920x1080}"
 
-mkdir -p /home/node/.vnc /tmp/runtime-node
+mkdir -p /home/node/.vnc /tmp/runtime-node /home/node/.config
 chmod 700 /tmp/runtime-node
+
+# Disable the KDE screen locker entirely. The node user has NO system password
+# (auth lives at oauth2-proxy), so a lock screen — triggered by idle timeout or
+# a KasmVNC disconnect/reconnect — would be an unrecoverable lockout: there is
+# no password that unlocks it. Written on every start so it holds regardless of
+# any stale config already on the home volume. (A matching system-wide default
+# is baked at /etc/xdg/kscreenlockerrc, but user config wins, so we force it.)
+cat > /home/node/.config/kscreenlockerrc <<'KRC'
+[Daemon]
+Autolock=false
+LockOnResume=false
+KRC
 
 # Let select-de.sh write its own xstartup the first time (an existing
 # xstartup triggers an overwrite prompt that hangs a stdin-less process).
