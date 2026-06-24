@@ -43,9 +43,17 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # 1) Sanity print + rename the stock uid-1000 `ubuntu` user to `node` with
 # home /home/node, matching the portal's volume-mount + filebrowser-root
 # convention (see header). `-m` migrates the (empty) home dir.
+#
+# usermod/groupmod live in the `passwd` package, which the minimal
+# ubuntu:24.04 rootfs does NOT ship (same class of gotcha as
+# node:20-bookworm-slim dropping passwd) — so install it first, else the
+# rename dies with "usermod: not found" (exit 127).
 RUN set -eux; \
     cat /etc/os-release; \
     uname -a; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends passwd; \
+    rm -rf /var/lib/apt/lists/*; \
     usermod  -l node -d /home/node -m ubuntu; \
     groupmod -n node ubuntu; \
     id node

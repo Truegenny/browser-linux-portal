@@ -326,6 +326,7 @@ for c in $(docker ps -aq --filter "name=^ws-"); do docker rm -f "$c"; done
 | Symptom | Cause | Fix |
 |---|---|---|
 | `exit 127` on `useradd -u 1000 dev` | `passwd` package stripped from `node:20-bookworm-slim` | Reuse the upstream `node` user (uid 1000); don't `useradd` |
+| `usermod: not found` (exit 127) renaming `ubuntu`→`node` in the power image | `passwd` package absent from minimal `ubuntu:24.04` rootfs | `apt-get install -y passwd` before `usermod`/`groupmod` (power Dockerfile §1) |
 | NodeSource `setup_20.x | bash -` failed silently | Bare `debian:12-slim` lacks `lsb-release` and other helpers | Use `node:20-bookworm-slim` directly; drop NodeSource |
 | `ttyd.x86_64` hardcoded | wrong arch on arm64 hosts | Use `$TARGETARCH` to pick `ttyd.x86_64` / `ttyd.aarch64` |
 | `filebrowser users add` rejected | password validator requires ≥12 chars | Use `noauth-unused-placeholder-xxx` (32 chars; never used since auth is disabled) |
