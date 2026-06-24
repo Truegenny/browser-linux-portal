@@ -327,6 +327,7 @@ for c in $(docker ps -aq --filter "name=^ws-"); do docker rm -f "$c"; done
 |---|---|---|
 | `exit 127` on `useradd -u 1000 dev` | `passwd` package stripped from `node:20-bookworm-slim` | Reuse the upstream `node` user (uid 1000); don't `useradd` |
 | `usermod: not found` (exit 127) renaming `ubuntu`→`node` in the power image | The Dockerfile `ENV PATH` omitted `/usr/sbin` — `usermod`/`groupmod` (and `make-ssl-cert`) live there; `passwd` pkg was present all along | Put `/usr/sbin:/sbin` in the power Dockerfile's `ENV PATH`. Also needed at runtime so the portal's `ss` exec resolves |
+| `chown: cannot access '/usr/local/lib/node_modules'` in the power image | NodeSource Node puts npm's global prefix at `/usr` (`/usr/lib/node_modules`, `/usr/bin`), not `/usr/local` like the official `node` image | Pin `npm_config_prefix=/usr/local` (ENV) so globals install under `/usr/local` and can be safely chown'd to `node` — don't chown `/usr/bin` |
 | NodeSource `setup_20.x | bash -` failed silently | Bare `debian:12-slim` lacks `lsb-release` and other helpers | Use `node:20-bookworm-slim` directly; drop NodeSource |
 | `ttyd.x86_64` hardcoded | wrong arch on arm64 hosts | Use `$TARGETARCH` to pick `ttyd.x86_64` / `ttyd.aarch64` |
 | `filebrowser users add` rejected | password validator requires ≥12 chars | Use `noauth-unused-placeholder-xxx` (32 chars; never used since auth is disabled) |

@@ -38,6 +38,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # ~500 MB-1 GB of browsers in the image layer, shared and immutable, and
     # means a fresh home volume already has working browsers.
     PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
+    # NodeSource puts npm's global prefix at /usr (-> /usr/lib/node_modules,
+    # /usr/bin). Pin it to /usr/local instead — mirrors the official node
+    # image, keeps our global tools (claude, playwright) isolated under
+    # /usr/local so that prefix can be safely chown'd to node for claude's
+    # auto-updater (chowning /usr/bin would be wrong + unsafe). As an ENV it
+    # applies at BOTH build and runtime.
+    npm_config_prefix=/usr/local \
     # MUST include /usr/sbin + /sbin: usermod/groupmod (step 1) and
     # make-ssl-cert (step 4) live in /usr/sbin, and at runtime the portal
     # execs `ss` (iproute2) which can resolve via sbin. Omitting them gives
@@ -208,7 +215,10 @@ RUN set -eux; \
     claude --version || true; \
     npx --yes playwright install --with-deps chromium firefox webkit; \
     # World-readable so the unprivileged `node` user can launch them, and
-    # the npm prefix is owned by node so claude-code's auto-updater works.
+    # the npm prefix (pinned to /usr/local via npm_config_prefix above) is
+    # owned by node so claude-code's auto-updater works. Both dirs exist:
+    # /usr/local/bin already holds ttyd/filebrowser, and npm just created
+    # /usr/local/lib/node_modules for the global installs.
     chmod -R a+rX "$PLAYWRIGHT_BROWSERS_PATH"; \
     chown -R node:node /usr/local/lib/node_modules /usr/local/bin; \
     apt-get clean; \
