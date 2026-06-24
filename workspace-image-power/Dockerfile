@@ -38,22 +38,20 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # ~500 MB-1 GB of browsers in the image layer, shared and immutable, and
     # means a fresh home volume already has working browsers.
     PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
-    PATH="/home/node/.local/bin:/usr/local/bin:/usr/bin:/bin"
+    # MUST include /usr/sbin + /sbin: usermod/groupmod (step 1) and
+    # make-ssl-cert (step 4) live in /usr/sbin, and at runtime the portal
+    # execs `ss` (iproute2) which can resolve via sbin. Omitting them gives
+    # "usermod: not found" (exit 127) at build despite passwd being installed.
+    PATH="/home/node/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # 1) Sanity print + rename the stock uid-1000 `ubuntu` user to `node` with
 # home /home/node, matching the portal's volume-mount + filebrowser-root
 # convention (see header). `-m` migrates the (empty) home dir.
-#
-# usermod/groupmod live in the `passwd` package, which the minimal
-# ubuntu:24.04 rootfs does NOT ship (same class of gotcha as
-# node:20-bookworm-slim dropping passwd) — so install it first, else the
-# rename dies with "usermod: not found" (exit 127).
+# (usermod/groupmod come from the passwd package, which ubuntu:24.04 ships;
+# they live in /usr/sbin — see the ENV PATH note above.)
 RUN set -eux; \
     cat /etc/os-release; \
     uname -a; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends passwd; \
-    rm -rf /var/lib/apt/lists/*; \
     usermod  -l node -d /home/node -m ubuntu; \
     groupmod -n node ubuntu; \
     id node
