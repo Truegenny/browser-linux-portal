@@ -155,6 +155,10 @@ scripts/               — build-workspace-image.sh, idle-stop.sh
 docs/
   DEPLOY.md            — Ubuntu/Azure deploy runbook (start here)
   SSO.md               — Entra ID app-registration + claims walkthrough
+  RESIZE-REBOOT-RECOVERY.md — what to do when the VM comes back from an
+                         Azure resize / reboot and the site is down (data-disk
+                         remount, the `docker compose down && up -d` network
+                         fix, DNS/public-IP checks)
 ```
 
 ## Webapp sharing
