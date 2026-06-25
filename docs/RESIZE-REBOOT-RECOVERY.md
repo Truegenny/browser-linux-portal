@@ -123,3 +123,39 @@ Then test `https://claudelab.ntiva.com` from a real browser (outside the VM).
 Workspaces are stopped after any reboot. Users just open `/app` and click
 **Start**. Nothing is lost — only the container is recreated; the home volume
 persists.
+
+---
+
+## OS disk filling up (`/` near full)
+
+The 61 GB OS disk (`/dev/sdb1`, `/`) is separate from the 251 GB Docker data
+disk (`/dev/sda`, `/var/lib/docker`). If `/` fills up, it is almost always
+**Docker build cache** in `/var/lib/containerd` — this Docker uses the
+**containerd image store**, so image layers *and* build cache live under
+`/var/lib/containerd` on the **OS disk**, not the data disk. Every
+`docker compose build --no-cache ...` (the power image is ~8 GB) dumps a fresh
+pile of build cache there.
+
+Diagnose:
+```bash
+df -h /
+sudo du -xh --max-depth=1 /var/lib 2>/dev/null | sort -rh | head   # expect /var/lib/containerd as the big one
+docker system df                                                    # Build Cache row = the reclaimable part
+```
+
+Fix (safe — never touches volumes or running containers):
+```bash
+docker builder prune -af      # reclaims the build cache — the usual culprit
+docker image prune -af        # dangling images (often 0B here; images retag in place)
+docker container prune -f      # optional: stopped ws-*/builder containers; portal recreates on Start
+df -h /
+```
+
+⚠️ Never `docker system prune --volumes` — deletes the `ws-*-home` user data.
+
+**Habit that prevents it:** run `docker builder prune -af` after any
+`--no-cache` build, and avoid `--no-cache` unless you truly need a clean build
+(a cached rebuild reuses the heavy KDE/Playwright layers and adds ~nothing).
+In-use images are ~28 GB and stable; only build cache grows.
+
+(2026-06-24: `/` hit 89%; `docker builder prune -af` freed 28 GB → 51%.)
