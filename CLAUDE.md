@@ -270,6 +270,9 @@ current container's tier is shown in `/admin` → Workspaces → Tier column.
 - `WORKSPACE_IMAGE` (Debian terminal/desktop) / `WORKSPACE_IMAGE_POWER` (Ubuntu power image)
 - `WORKSPACE_SHM_SIZE` (512m) / `WORKSPACE_SHM_SIZE_POWER` (2g) — `/dev/shm` per tier
 - `WORKSPACE_CPUS` (1.5) / `WORKSPACE_CPUS_POWER` (4) — CPU caps (power gets its own)
+- `WORKSPACE_PIDS` (1024) / `WORKSPACE_PIDS_POWER` (4096) — max tasks (procs+threads)
+  per workspace (`PidsLimit` cgroup). Power needs a high ceiling — KDE + headed
+  browsers are thread-heavy; too low and any fork/`posix_spawn` fails `EAGAIN`.
 - `WORKSPACE_IDLE_HOURS` — per-container idle limit
 
 ## Common commands (inside the project root)

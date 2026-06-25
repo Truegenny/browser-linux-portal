@@ -6,6 +6,11 @@ backups/
 .DS_Store
 portal/public/favicon.ico
 
+# Core dumps (e.g. from a crashing node/tsc in dev) — never commit these
+core
+core.*
+*.core
+
 # Per-deployment portal state. desktop.users is the GUI-tier allowlist;
 # admins.users is the portal-elected admins email list (post-v1.0 — the
 # pre-v1.0 bcrypt admins.users file is gone). users.users is leftover

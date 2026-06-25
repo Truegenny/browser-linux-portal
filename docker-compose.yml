@@ -121,6 +121,11 @@ services:
       WORKSPACE_SHM_SIZE_POWER: ${WORKSPACE_SHM_SIZE_POWER:-2g}
       WORKSPACE_CPUS: ${WORKSPACE_CPUS:-1.5}
       WORKSPACE_CPUS_POWER: ${WORKSPACE_CPUS_POWER:-4}
+      # Max tasks (procs+threads) per workspace. 512 (the old hardcoded value)
+      # is too low for the power tier's KDE + browser threads — exhausting it
+      # makes fork/posix_spawn fail with EAGAIN.
+      WORKSPACE_PIDS: ${WORKSPACE_PIDS:-1024}
+      WORKSPACE_PIDS_POWER: ${WORKSPACE_PIDS_POWER:-4096}
       WORKSPACE_IDLE_HOURS: ${WORKSPACE_IDLE_HOURS:-2}
       # Bootstrap admin allowlist (emails). The canonical signal is the
       # Entra groups claim — see ADMIN_GROUP_OID — but this env is the

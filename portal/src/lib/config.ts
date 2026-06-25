@@ -45,6 +45,12 @@ export const config = {
   workspaceShmSizePower: env('WORKSPACE_SHM_SIZE_POWER', '2g'),
   workspaceCpus: env('WORKSPACE_CPUS', '1.5'),
   workspaceCpusPower: env('WORKSPACE_CPUS_POWER', '4'),
+  // Max tasks (processes AND threads) per workspace — the PidsLimit cgroup, a
+  // fork-bomb guard. Standard tiers are light; the power tier runs KDE + many
+  // headed browser threads, so 512 is exhausted fast (then any fork/posix_spawn
+  // fails with EAGAIN, e.g. Claude's SessionStart hook). Give power much more.
+  workspacePids: envNum('WORKSPACE_PIDS', 1024),
+  workspacePidsPower: envNum('WORKSPACE_PIDS_POWER', 4096),
   workspaceIdleHours: envNum('WORKSPACE_IDLE_HOURS', 2),
   // Bootstrap admin allowlist by email. The canonical signal is the Entra
   // groups claim — see adminGroupOid — but this env is the fallback for

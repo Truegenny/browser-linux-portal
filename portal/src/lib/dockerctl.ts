@@ -124,6 +124,7 @@ function tierResources(tier: WorkspaceTier): {
   memBytes: number;
   shmBytes: number;
   nanoCpus: number;
+  pidsLimit: number;
 } {
   if (tier === 'power') {
     return {
@@ -131,6 +132,12 @@ function tierResources(tier: WorkspaceTier): {
       memBytes: parseMemory(config.workspaceMemoryPower),
       shmBytes: parseMemory(config.workspaceShmSizePower),
       nanoCpus: Math.floor(Number(config.workspaceCpusPower) * 1e9),
+      // Power runs KDE + multiple headed browsers + Playwright. The PidsLimit
+      // cgroup caps total TASKS (processes AND threads), and browsers/KDE are
+      // very thread-heavy, so the standard 512 is exhausted fast — at which
+      // point even a tiny posix_spawn('/bin/sh') (e.g. Claude's SessionStart
+      // hook) fails with EAGAIN. Give power a much higher ceiling.
+      pidsLimit: config.workspacePidsPower,
     };
   }
   return {
@@ -142,6 +149,7 @@ function tierResources(tier: WorkspaceTier): {
     ),
     shmBytes: parseMemory(config.workspaceShmSize),
     nanoCpus: Math.floor(Number(config.workspaceCpus) * 1e9),
+    pidsLimit: config.workspacePids,
   };
 }
 
@@ -171,7 +179,7 @@ export async function ensureWorkspace(
   }
 
   // Create container fresh. Image + resource caps are tier-dependent.
-  const { image, memBytes, shmBytes, nanoCpus } = tierResources(opts.tier);
+  const { image, memBytes, shmBytes, nanoCpus, pidsLimit } = tierResources(opts.tier);
   const nowIso = new Date().toISOString();
 
   await docker.createContainer({
@@ -203,7 +211,7 @@ export async function ensureWorkspace(
       Memory: memBytes,
       MemorySwap: memBytes,
       NanoCpus: nanoCpus,
-      PidsLimit: 512,
+      PidsLimit: pidsLimit,
       // /dev/shm. Docker defaults this to 64 MB, which is far too small for
       // Chromium: it stores renderer<->browser shared-memory IPC and rendered
       // tiles here, and a heavy page (e.g. driving a big SPA via Playwright)
