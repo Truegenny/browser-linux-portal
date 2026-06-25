@@ -6,9 +6,10 @@
 # This is a SEPARATE image from the terminal/desktop-lite image
 # (workspace-image/, Debian 12). The power tier is rare, opt-in, and gets a
 # larger RAM/CPU/shm allotment. We diverge to Ubuntu 24.04 deliberately:
-#   * Playwright's first-class CI target is Ubuntu — `playwright install
-#     --with-deps` resolves all three engines' OS deps (incl. WebKit's long
-#     tail: libwoff/gstreamer/libenchant/libhyphen) cleanly here.
+#   * Playwright's first-class CI target is Ubuntu — `playwright install-deps`
+#     resolves all three engines' OS deps (incl. WebKit's long tail:
+#     libwoff/gstreamer/libenchant/libhyphen) cleanly here. (Browser binaries
+#     are installed per-project into ~/.cache, not baked — see the ENV note.)
 #   * Newer Mesa/GTK/font stack → smoother headed-browser rendering over VNC.
 #   * The full (non-slim) base ships lsb-release etc., so NodeSource installs
 #     cleanly — sidestepping the slim-image NodeSource failure in the Debian
@@ -33,11 +34,20 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    # Bake Playwright browsers into the image at a system path rather than
-    # the per-user ~/.cache (which lives on the home volume). This keeps the
-    # ~500 MB-1 GB of browsers in the image layer, shared and immutable, and
-    # means a fresh home volume already has working browsers.
-    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
+    # Firefox's content sandbox needs user namespaces, which this hardened
+    # container blocks (no-new-privileges + dropped caps -> clone(CLONE_NEWUSER)
+    # EPERM), so a headed Firefox under Playwright crashes the renderer unless
+    # the content sandbox is disabled. Default it on so users don't have to
+    # remember the flag. (Chromium needs --no-sandbox passed in the PW launch
+    # args; there's no env for that — see the Playwright note in CLAUDE.md.)
+    MOZ_DISABLE_CONTENT_SANDBOX=1 \
+    # NOTE: we deliberately do NOT set PLAYWRIGHT_BROWSERS_PATH. Forcing a
+    # baked /opt path locked every project to the image's exact Playwright
+    # version and broke any project pinning a different one (e.g. a project on
+    # PW 1.60 needs firefox-1522, but the image baked firefox-1532). Leaving it
+    # unset lets Playwright use its per-project default (~/.cache/ms-playwright,
+    # on the persistent home volume) so `npx playwright install` fetches the
+    # browsers that match each project's PW version. OS deps are baked below.
     # NodeSource puts npm's global prefix at /usr (-> /usr/lib/node_modules,
     # /usr/bin). Pin it to /usr/local instead — mirrors the official node
     # image, keeps our global tools (claude, playwright) isolated under
@@ -229,20 +239,25 @@ RUN set -eux; \
     filebrowser users add nobody noauth-unused-placeholder-xxx --perm.admin --database "$FB_DB"
 RUN chmod 644 "$FB_DB"
 
-# 10) Node global tooling: Claude Code CLI + Playwright. Then download all
-# three browser engines and their OS deps to PLAYWRIGHT_BROWSERS_PATH.
-# `--with-deps` apt-installs the engines' shared libraries (incl. WebKit's
-# long dependency tail). Browsers land in /opt/ms-playwright (system, baked).
+# 10) Node global tooling: Claude Code CLI + Playwright, then the OS-level
+# browser dependencies for all three engines.
+#
+# We install the engines' shared-library DEPENDENCIES (`playwright
+# install-deps` — chromium/firefox/webkit, incl. WebKit's long tail:
+# libwoff/gstreamer/libenchant/libhyphen) but deliberately do NOT download the
+# browser binaries here. Baking binaries locked every project to this image's
+# exact Playwright version (see the PLAYWRIGHT_BROWSERS_PATH note in the ENV
+# block). Instead each project runs `npx playwright install` once, which
+# fetches the browsers matching ITS Playwright version into
+# ~/.cache/ms-playwright on the persistent home volume — and needs no sudo
+# because the OS deps are already present from this step.
 RUN set -eux; \
     npm install -g @anthropic-ai/claude-code playwright; \
     claude --version || true; \
-    npx --yes playwright install --with-deps chromium firefox webkit; \
-    # World-readable so the unprivileged `node` user can launch them, and
-    # the npm prefix (pinned to /usr/local via npm_config_prefix above) is
-    # owned by node so claude-code's auto-updater works. Both dirs exist:
-    # /usr/local/bin already holds ttyd/filebrowser, and npm just created
-    # /usr/local/lib/node_modules for the global installs.
-    chmod -R a+rX "$PLAYWRIGHT_BROWSERS_PATH"; \
+    npx --yes playwright install-deps; \
+    # npm prefix is pinned to /usr/local (npm_config_prefix); own it as node so
+    # claude-code's auto-updater can write. /usr/local/bin already holds
+    # ttyd/filebrowser; npm created /usr/local/lib/node_modules.
     chown -R node:node /usr/local/lib/node_modules /usr/local/bin; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*

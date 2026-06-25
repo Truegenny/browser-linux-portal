@@ -4,11 +4,13 @@
   │                                                          │
   │  • Ubuntu 24.04 + Node 22 + Claude Code                  │
   │  • KDE Plasma desktop at  /u/<you>/desktop/              │
-  │  • Playwright: chromium, firefox & webkit pre-installed  │
+  │  • Playwright deps baked — in your project, run once:    │
+  │      npx playwright install   (chromium/firefox/webkit)  │
   │  • Google Chrome + xdotool/scrot/wmctrl for cowork       │
   │  • Your home directory persists across restarts          │
   │                                                          │
-  │  Browsers: launch with --no-sandbox (hardened sandbox).  │
+  │  Chromium under Playwright: pass args:['--no-sandbox'].  │
+  │  Firefox content sandbox is disabled for you already.    │
   │  DISPLAY=:1 is the KDE/VNC screen — headed browsers and  │
   │  computer-use tools render there.                        │
   │                                                          │

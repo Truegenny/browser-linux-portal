@@ -392,10 +392,14 @@ Debian image (so volumes are interchangeable across tiers), but:
 - Desktop: **KDE Plasma** (X11) over KasmVNC instead of XFCE. Launched via
   `startplasma-x11` in entrypoint.sh; sddm is present but never started
   (no init in-container). Default resolution 1920×1080.
-- Browsers: **Google Chrome** (`google-chrome-stable`) + the full
-  **Playwright** suite — chromium, firefox, webkit — installed with
-  `playwright install --with-deps` to `PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright`
-  (baked into the image layer, not the home volume).
+- Browsers: **Google Chrome** (`google-chrome-stable`) baked, plus the
+  **Playwright** OS dependencies for all three engines (via `playwright
+  install-deps`). The Playwright **browser binaries are NOT baked** and
+  `PLAYWRIGHT_BROWSERS_PATH` is deliberately **unset** — each project runs
+  `npx playwright install` once, which fetches the browsers matching *its*
+  Playwright version into `~/.cache/ms-playwright` on the persistent home
+  volume (no sudo needed, deps are present). See the **Playwright in the power
+  tier** note below for why baking to `/opt` was removed.
 - Computer-use tooling: `xdotool`, `wmctrl`, `scrot`, `imagemagick`,
   `xclip`, `x11-apps`. `DISPLAY=:1` is exported in `.bashrc` so headed
   browsers / xdotool from the terminal render onto the visible desktop.
@@ -412,10 +416,39 @@ Debian image (so volumes are interchangeable across tiers), but:
   `--no-sandbox --test-type`, and `google-chrome.desktop`'s Exec lines are
   repointed at it, so both the KDE menu icon and terminal/agent launches get
   the flag. Playwright's own chromium is separate — pass `--no-sandbox` (or
-  `chromiumSandbox: false`) in the script. The portal gives this tier a real
-  2 GB `/dev/shm`, so do **not** use `--disable-dev-shm-usage`.
-- Image size ~4–5 GB; build ~10–20 min. Runtime RAM is the reason for the
-  6 GB cap — KDE + multiple headed Chromium contexts.
+  `chromiumSandbox: false`) in the script. Playwright **Firefox** has its
+  content sandbox disabled for users via `MOZ_DISABLE_CONTENT_SANDBOX=1` (image
+  ENV), since the same userns block would otherwise crash its renderer headed.
+  The portal gives this tier a real 2 GB `/dev/shm`, so do **not** use
+  `--disable-dev-shm-usage`.
+- Image size ~3–4 GB (browser binaries no longer baked); build ~10–20 min.
+  Runtime RAM is the reason for the 6 GB cap — KDE + multiple headed browsers.
+
+### Playwright in the power tier
+
+Browsers are **per-project**, not baked. In a project:
+```bash
+npm i -D @playwright/test        # or whatever pins the project's PW version
+npx playwright install           # downloads matching browsers to ~/.cache/ms-playwright
+```
+Why not baked: the image briefly set `PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright`
+and pre-installed browsers there. That **locked every project to the image's
+exact Playwright version** — a project on PW 1.60 needs firefox-1522, but the
+image baked firefox-1532, so launches failed with "Executable doesn't exist"
+or the page closed instantly (incompatible Juggler protocol). `/opt` was also
+root-owned (can't install matching builds) and the global shell var meant a
+project's own `.env` couldn't override it. Removing the var + the bake fixes
+all of that; OS deps stay baked so `npx playwright install` needs no sudo.
+
+Gotchas in this container (document for in-workspace Claude):
+- **Chromium**: launch with `args: ['--no-sandbox']` (userns blocked).
+- **Firefox**: content sandbox already disabled via `MOZ_DISABLE_CONTENT_SANDBOX=1`.
+- **WebKit**: works headless with the baked deps.
+- Headed runs render on `DISPLAY=:1` (KasmVNC/KDE).
+- `/dev/shm` is 2 GB — shm size is not the crash cause; don't reach for `--disable-dev-shm-usage`.
+- Don't `pkill -f firefox`/`-f chromium` from a command line that itself contains
+  those strings — `pkill -f` matches the full command line and can SIGKILL its
+  own shell. Match by process name (`pkill -x`) or profile dir instead.
 
 ## Things explicitly NOT to do
 
