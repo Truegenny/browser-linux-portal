@@ -34,6 +34,11 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
+    # The KDE session is started by entrypoint.sh (not via login/PAM), so SHELL
+    # is otherwise unset — KDE's Konsole then can't resolve a shell and warns
+    # "Could not find '', starting '/bin/bash' instead." Set it (and the user's
+    # passwd shell, in step 1) so terminals open cleanly.
+    SHELL=/bin/bash \
     # Firefox's content sandbox needs user namespaces, which this hardened
     # container blocks (no-new-privileges + dropped caps -> clone(CLONE_NEWUSER)
     # EPERM), so a headed Firefox under Playwright crashes the renderer unless
@@ -69,8 +74,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN set -eux; \
     cat /etc/os-release; \
     uname -a; \
-    usermod  -l node -d /home/node -m ubuntu; \
+    usermod  -l node -d /home/node -s /bin/bash -m ubuntu; \
     groupmod -n node ubuntu; \
+    getent passwd node; \
     id node
 
 # 2) Core dev tools.
