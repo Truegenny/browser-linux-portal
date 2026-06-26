@@ -249,6 +249,32 @@ cross-user access is impossible.
       </div>
     </aside>`;
 
+  // ---------------------------------------------------------------------
+  // Copy & paste help. The browser terminal (ttyd/xterm.js) doesn't use plain
+  // Ctrl+C/Ctrl+V (Ctrl+C is the shell's interrupt), which trips users up. The
+  // desktop section only renders for GUI tiers (desktop/power).
+  // ---------------------------------------------------------------------
+  const clipboardDesktop = desktopEnabled
+    ? `
+      <p class="muted small" style="margin:0 0 6px;"><strong>In the desktop</strong> (KDE)</p>
+      <ul class="muted small" style="margin:0;padding-left:18px;line-height:1.6;">
+        <li><strong>Konsole</strong> (the terminal app): <code>Ctrl</code>+<code>Shift</code>+<code>C</code> to copy, <code>Ctrl</code>+<code>Shift</code>+<code>V</code> to paste — or right-click → Copy/Paste.</li>
+        <li><strong>Other apps</strong> (Firefox, text editors): the normal <code>Ctrl</code>+<code>C</code> / <code>Ctrl</code>+<code>V</code>.</li>
+        <li><strong>Between your computer and the desktop:</strong> the clipboard syncs automatically — copy on one side, paste on the other. If a paste doesn't carry across, open the control bar at the left edge of the desktop view and use its <em>Clipboard</em> panel.</li>
+      </ul>`
+    : '';
+  const clipboardCard = `
+    <div class="card" style="margin-top:18px;">
+      <h3>Copy &amp; paste</h3>
+      <p class="muted small" style="margin:6px 0 10px;">The browser terminal doesn't use plain <code>Ctrl</code>+<code>C</code> / <code>Ctrl</code>+<code>V</code> (in a terminal those are the shell's own controls). Use:</p>
+      <p class="muted small" style="margin:0 0 6px;"><strong>In the terminal</strong></p>
+      <ul class="muted small" style="margin:0 0 ${desktopEnabled ? '12px' : '0'};padding-left:18px;line-height:1.6;">
+        <li><strong>Copy:</strong> hold <code>Shift</code> and drag to select the text — that copies it. (Or select, then right-click → <em>Copy</em>.)</li>
+        <li><strong>Paste:</strong> <code>Ctrl</code>+<code>Shift</code>+<code>V</code> (or right-click → <em>Paste</em>).</li>
+      </ul>
+      ${clipboardDesktop}
+    </div>`;
+
   const body = `
 <section class="container">
   <h2>Hello, ${esc(user)}.</h2>
@@ -266,6 +292,7 @@ cross-user access is impossible.
         ${recreateNote}
       </div>
       ${tip}
+      ${clipboardCard}
       ${webappCard}
     </div>
     ${portsSidebar}
